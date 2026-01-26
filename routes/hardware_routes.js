@@ -1,0 +1,20 @@
+const express = require('express');
+const router = express.Router();
+const hard_ctrl = require('../controllers/hardware_controller');
+const { protect, authorize } = require('../middleware/auth_middleware');
+const validate = require('../middleware/validation_middleware');
+const { report_location_schema, register_band_schema } = require('../middleware/schemas');
+
+// Public endpoint for wristband to report location
+router.post('/ping', validate(report_location_schema), hard_ctrl.report_location);
+
+// Protected endpoints
+router.use(protect);
+
+// Admin only
+router.post('/register', authorize('admin'), validate(register_band_schema), hard_ctrl.register_band);
+router.get('/bands', authorize('admin'), hard_ctrl.get_all_bands);
+router.get('/bands/:serial_number', authorize('admin'), hard_ctrl.get_band);
+router.delete('/bands/:serial_number', authorize('admin'), hard_ctrl.deactivate_band);
+
+module.exports = router;
