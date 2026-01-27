@@ -220,6 +220,29 @@ All paginated responses include:
   }
   ```
 
+### 6.5. Get Pilgrim by ID
+- **GET** `/auth/pilgrims/:pilgrim_id`
+- **Auth:** Moderator or Admin only
+- **Description:** Retrieve details of a single pilgrim by their ID.
+- **Params:** `pilgrim_id` (MongoDB ID)
+- **Response (200):**
+  ```json
+  {
+    "_id": "60d5ec49c1234567890abce0",
+    "full_name": "Ahmed Hassan",
+    "national_id": "123456789",
+    "email": "ahmed@example.com",
+    "phone_number": "+201234567890",
+    "medical_history": "Diabetic, takes insulin daily",
+    "age": 30,
+    "gender": "male",
+    "created_at": "2024-01-20T10:30:00Z"
+  }
+  ```
+- **Error (404):** Pilgrim not found
+
+
+
 ---
 
 ## 👥 Group Management Endpoints (`/groups`)
@@ -302,11 +325,81 @@ All paginated responses include:
   }
   ```
 
-### 9. Add Pilgrim to Group
-- **POST** `/groups/:group_id/add-pilgrim`
-- **Auth:** Moderator or Admin
+### 8.5. Get Single Group
+- **GET** `/groups/:group_id`
+- **Auth:** Moderator or Admin (must be a moderator of the group or Admin)
 - **Params:** `group_id` (MongoDB ID)
-- **Description:** Add a pilgrim to a group. A moderator cannot add themselves as a pilgrim.
+- **Description:** Retrieve details of a single group by its ID.
+- **Response (200):**
+  ```json
+  {
+    "_id": "60d5f1a9c1234567890abcdf",
+    "group_name": "Hajj Group 2024",
+    "moderator_ids": [
+      {
+        "_id": "60d5ec49c1234567890abcde",
+        "full_name": "John Doe",
+        "email": "john@example.com"
+      }
+    ],
+    "pilgrims": [
+      {
+        "_id": "60d5ec49c1234567890abce0",
+        "full_name": "Ahmed Hassan",
+        "national_id": "123456789",
+        "email": "ahmed@example.com",
+        "phone_number": "+201234567890",
+        "medical_history": "Diabetic, takes insulin daily",
+        "age": 30,
+        "gender": "male",
+        "band_info": {
+          "serial_number": "BAND-001",
+          "last_location": {
+            "lat": 21.4225,
+            "lng": 39.8262
+          },
+          "last_updated": "2024-01-26T15:30:00Z",
+          "battery_percent": 85
+        }
+      }
+    ],
+    "created_by": "60d5ec49c1234567890abcde",
+    "created_at": "2024-01-20T10:30:00Z"
+  }
+  ```
+- **Error (404):** Group not found
+- **Error (403):** If you're not an admin or a moderator of the group
+
+
+
+### 8.6. Update Group Details
+- **PUT** `/groups/:group_id`
+- **Auth:** Moderator or Admin (must be a moderator of the group or Admin)
+- **Params:** `group_id` (MongoDB ID)
+- **Description:** Update details of an existing group. Only the group name is currently updatable.
+- **Body:**
+  ```json
+  {
+    "group_name": "New Hajj Group Name 2025"
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "message": "Group updated successfully",
+    "group": {
+      "_id": "60d5f1a9c1234567890abcdf",
+      "group_name": "New Hajj Group Name 2025",
+      "moderator_ids": ["60d5ec49c1234567890abcde"],
+      "pilgrim_ids": [],
+      "created_by": "60d5ec49c1234567890abcde",
+      "created_at": "2024-01-20T10:30:00Z"
+    }
+  }
+  ```
+- **Error (404):** Group not found
+- **Error (403):** If you're not an admin or a moderator of the group
+- **Error (400):** If group name already exists for the moderator
 - **Body:**
   ```json
   {
@@ -388,6 +481,36 @@ All paginated responses include:
 - **Errors:**
   - 404: Pilgrim or band not found
   - 400: User is not a pilgrim
+
+### 11.5. Unassign Band from Pilgrim
+- **POST** `/groups/unassign-band`
+- **Auth:** Moderator or Admin
+- **Description:** Unassigns a hardware band from a pilgrim. The band's `current_user_id` will be set to `null`.
+- **Body:**
+  ```json
+  {
+    "user_id": "60d5ec49c1234567890abce0"
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "message": "Band successfully unassigned from pilgrim",
+    "band": {
+      "_id": "60d5f1a9c1234567890abce1",
+      "serial_number": "BAND-001",
+      "imei": "358938070000000",
+      "status": "active",
+      "current_user_id": null,
+      "last_latitude": null,
+      "last_longitude": null,
+      "last_updated": null
+    }
+  }
+  ```
+- **Errors:**
+  - 404: Pilgrim not found or no band assigned
+  - 400: User is not a pilgrim or band already unassigned
 
 ### 12. Send Group Alert
 - **POST** `/groups/send-alert`

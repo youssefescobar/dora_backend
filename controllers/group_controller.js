@@ -2,6 +2,63 @@ const Group = require('../models/group_model');
 const User = require('../models/user_model');
 const HardwareBand = require('../models/hardware_band_model');
 
+// Get a single group by ID (moderator/admin only)
+exports.get_single_group = async (req, res) => {
+    try {
+        const { group_id } = req.params;
+
+        const group = await Group.findById(group_id)
+            .populate('moderator_ids', 'full_name email')
+            .lean(); // Use lean for easier object manipulation
+
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+
+        // Check if user is admin or a moderator of this group
+        const is_admin = req.user.role === 'admin';
+        const is_group_moderator = group.moderator_ids.some(mod => mod._id.toString() === req.user.id);
+
+        if (!is_admin && !is_group_moderator) {
+            return res.status(403).json({ message: "Not authorized to view this group" });
+        }
+
+        // Enrich pilgrims with their details and band info
+        const pilgrims_with_details = await Promise.all(group.pilgrim_ids.map(async (pilgrim_id) => {
+            const pilgrim = await User.findById(pilgrim_id)
+                .select('full_name national_id email phone_number medical_history age gender')
+                .lean();
+
+            if (!pilgrim) return null;
+
+            const band = await HardwareBand.findOne({ current_user_id: pilgrim_id }).lean();
+
+            return {
+                ...pilgrim,
+                band_info: band ? {
+                    serial_number: band.serial_number,
+                    last_location: { lat: band.last_latitude, lng: band.last_longitude },
+                    last_updated: band.last_updated,
+                    battery_percent: band.battery_percent
+                } : null
+            };
+        }));
+        
+        group.pilgrims = pilgrims_with_details.filter(Boolean); // Add enriched pilgrims to group object
+        delete group.pilgrim_ids; // Remove raw pilgrim_ids array
+
+        // Remove __v from top-level group object
+        delete group.__v;
+        // The populated moderator_ids already exclude __v due to 'lean()' and selected fields.
+
+        res.status(200).json(group);
+
+    } catch (error) {
+        console.error("Error in get_single_group:", error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
 // 1. Create a group and assign the moderator
 exports.create_group = async (req, res) => {
     try {
@@ -147,6 +204,47 @@ exports.assign_band_to_pilgrim = async (req, res) => {
     }
 };
 
+// Unassign band from pilgrim (moderator/admin only)
+exports.unassign_band_from_pilgrim = async (req, res) => {
+    try {
+        const { user_id } = req.body;
+
+        // Validate the pilgrim exists and is a pilgrim
+        const user = await User.findById(user_id);
+        if (!user) {
+            return res.status(404).json({ message: "Pilgrim not found" });
+        }
+        if (user.role !== 'pilgrim') {
+            return res.status(400).json({ message: "User must be a pilgrim" });
+        }
+
+        // Find the band assigned to this pilgrim
+        const assigned_band = await HardwareBand.findOne({ current_user_id: user_id });
+        if (!assigned_band) {
+            return res.status(404).json({ message: "No band assigned to this pilgrim" });
+        }
+
+        // Unassign the band
+        const updated_band_doc = await HardwareBand.findOneAndUpdate(
+            { current_user_id: user_id },
+            { $set: { current_user_id: null } },
+            { new: true }
+        );
+
+        const updated_band = updated_band_doc.toObject();
+        delete updated_band.__v;
+        // The docs example shows battery_percent, last_latitude, etc. as null.
+        // If they were present before unassignment, they should still be.
+        // We will explicitly set them to null in the response for consistency with example if they are not already there.
+        updated_band.current_user_id = null; // Ensure null in response
+
+        res.json({ message: "Band successfully unassigned from pilgrim", band: updated_band });
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 // 4. Send Message to Group (for later Voice processing)
 exports.send_group_alert = async (req, res) => {
     try {
@@ -282,6 +380,55 @@ exports.delete_group = async (req, res) => {
 
         res.json({ message: "Group deleted successfully", group_id });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Update group details
+exports.update_group_details = async (req, res) => {
+    try {
+        const { group_id } = req.params;
+        const { group_name } = req.body;
+
+        const group = await Group.findById(group_id);
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+
+        const is_admin = req.user.role === 'admin';
+        const is_group_moderator = group.moderator_ids.some(mod => mod.toString() === req.user.id);
+
+        if (!is_admin && !is_group_moderator) {
+            return res.status(403).json({ message: "Not authorized to update this group" });
+        }
+
+        // Check if new group name already exists for this moderator (only if moderator is updating)
+        if (group_name && !is_admin) {
+             const existing_group_with_name = await Group.findOne({
+                group_name,
+                moderator_ids: req.user.id,
+                _id: { $ne: group_id } // Exclude current group
+            });
+            if (existing_group_with_name) {
+                return res.status(400).json({ message: "You already have a group with this name" });
+            }
+        }
+        
+        group.group_name = group_name || group.group_name;
+        await group.save();
+
+        const updated_group = await Group.findById(group_id)
+            .populate('moderator_ids', 'full_name email')
+            .lean();
+        
+        // Clean up __v and pilgrim_ids for response to match docs
+        delete updated_group.__v;
+        // The docs show pilgrim_ids as an array of IDs in the PUT response, so no need to delete or populate details for it
+
+        res.status(200).json({ message: "Group updated successfully", group: updated_group });
+
+    } catch (error) {
+        console.error("Error in update_group_details:", error);
         res.status(500).json({ error: error.message });
     }
 };

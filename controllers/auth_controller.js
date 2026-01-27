@@ -157,3 +157,21 @@ exports.search_pilgrims = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// Get pilgrim by ID (moderator/admin only)
+exports.get_pilgrim_by_id = async (req, res) => {
+    try {
+        const { pilgrim_id } = req.params;
+
+        const pilgrim = await User.findOne({ _id: pilgrim_id, role: 'pilgrim' })
+            .select('_id full_name national_id email phone_number medical_history age gender created_at');
+
+        if (!pilgrim) {
+            return res.status(404).json({ message: "Pilgrim not found" });
+        }
+
+        res.json(pilgrim);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};

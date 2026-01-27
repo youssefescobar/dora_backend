@@ -18,5 +18,6 @@ router.put('/update-profile', validate(update_profile_schema), auth_ctrl.update_
 // Moderator/Admin routes
 router.post('/register-pilgrim', authorize('moderator', 'admin'), validate(require('../middleware/schemas').register_pilgrim_schema), auth_ctrl.register_pilgrim);
 router.get('/search-pilgrims', authorize('moderator', 'admin'), auth_ctrl.search_pilgrims);
+router.get('/pilgrims/:pilgrim_id', authorize('moderator', 'admin'), auth_ctrl.get_pilgrim_by_id);
 
 module.exports = router;

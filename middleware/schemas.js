@@ -22,12 +22,18 @@ exports.register_pilgrim_schema = Joi.object({
     full_name: Joi.string().required().min(3).max(100),
     national_id: Joi.string().required(),
     medical_history: Joi.string().optional().max(500),
-    email: Joi.string().optional().email()
+    email: Joi.string().optional().email(),
+    age: Joi.number().optional().min(0).max(120), // Assuming reasonable age range
+    gender: Joi.string().optional().valid('male', 'female', 'other')
 });
 
 // Group validations
 exports.create_group_schema = Joi.object({
     group_name: Joi.string().required().min(3).max(100)
+});
+
+exports.update_group_schema = Joi.object({
+    group_name: Joi.string().optional().min(3).max(100)
 });
 
 exports.add_pilgrim_schema = Joi.object({
