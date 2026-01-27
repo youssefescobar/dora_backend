@@ -3,14 +3,15 @@ const HardwareBand = require('../models/hardware_band_model');
 // Endpoint for the physical wristband to report GPS data
 exports.report_location = async (req, res) => {
     try {
-        const { serial_number, lat, lng } = req.body;
+        const { serial_number, lat, lng, battery_percent } = req.body;
 
         const updated_band = await HardwareBand.findOneAndUpdate(
             { serial_number },
-            { 
-                last_latitude: lat, 
-                last_longitude: lng, 
-                last_updated: new Date() 
+            {
+                last_latitude: lat,
+                last_longitude: lng,
+                last_updated: new Date(),
+                ...(battery_percent !== undefined && { battery_percent })
             },
             { new: true }
         );
@@ -23,33 +24,34 @@ exports.report_location = async (req, res) => {
     }
 };
 
-// Get all bands (admin only)
+// Get all bands (admin/moderator)
 exports.get_all_bands = async (req, res) => {
     try {
-        const { page = 1, limit = 20, status } = req.query;
+        const { page = 1, limit = 50, status } = req.query;
 
         const pageNum = Math.max(1, parseInt(page) || 1);
-        const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 50));
         const skip = (pageNum - 1) * limitNum;
 
-        // Build query
         const query = status ? { status } : {};
 
-        // Get bands with pagination
         const bands = await HardwareBand.find(query)
-            .populate('current_user_id', 'full_name email phone_number national_id')
+            .populate('current_user_id', 'full_name email phone_number')
             .skip(skip)
-            .limit(limitNum);
+            .limit(limitNum)
+            .lean(); // Use lean for performance and easy modification
 
-        // Get total count
         const total = await HardwareBand.countDocuments(query);
 
         res.json({
-            bands,
-            page: pageNum,
-            limit: limitNum,
-            total,
-            pages: Math.ceil(total / limitNum)
+            success: true,
+            data: bands,
+            pagination: {
+                page: pageNum,
+                limit: limitNum,
+                total,
+                pages: Math.ceil(total / limitNum)
+            }
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -61,10 +63,13 @@ exports.get_band = async (req, res) => {
     try {
         const { serial_number } = req.params;
         
-        const band = await HardwareBand.findOne({ serial_number })
+        const band_doc = await HardwareBand.findOne({ serial_number })
             .populate('current_user_id', 'full_name email phone_number');
         
-        if (!band) return res.status(404).json({ message: "Band not found" });
+        if (!band_doc) return res.status(404).json({ message: "Band not found" });
+
+        const band = band_doc.toObject();
+        delete band.__v;
         
         res.json(band);
     } catch (error) {
@@ -75,20 +80,37 @@ exports.get_band = async (req, res) => {
 // Register a new band (admin only)
 exports.register_band = async (req, res) => {
     try {
-        const { serial_number, imei } = req.body;
+        const { serial_number, imei, battery_percent } = req.body;
 
         const existing = await HardwareBand.findOne({ serial_number });
         if (existing) {
             return res.status(400).json({ message: "Band with this serial number already exists" });
         }
 
-        const new_band = await HardwareBand.create({
+        const new_band_doc = await HardwareBand.create({
             serial_number,
             imei,
+            battery_percent, // Initialize battery_percent
             status: 'active'
         });
 
-        res.status(201).json({ message: "Band registered successfully", band: new_band });
+        const new_band = new_band_doc.toObject();
+        delete new_band.__v;
+
+        // Ensure all documented fields are present
+        const response_band = {
+            _id: new_band._id,
+            serial_number: new_band.serial_number,
+            imei: new_band.imei,
+            battery_percent: new_band.battery_percent || null, // Include battery_percent
+            status: new_band.status,
+            current_user_id: new_band.current_user_id || null,
+            last_latitude: new_band.last_latitude || null,
+            last_longitude: new_band.last_longitude || null,
+            last_updated: new_band.last_updated || null
+        };
+
+        res.status(201).json({ message: "Band registered successfully", band: response_band });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
@@ -99,15 +121,57 @@ exports.deactivate_band = async (req, res) => {
     try {
         const { serial_number } = req.params;
 
-        const band = await HardwareBand.findOneAndUpdate(
+        const band_doc = await HardwareBand.findOneAndUpdate(
             { serial_number },
             { status: 'inactive', current_user_id: null },
             { new: true }
         );
 
-        if (!band) return res.status(404).json({ message: "Band not found" });
+        if (!band_doc) return res.status(404).json({ message: "Band not found" });
+
+        const band = band_doc.toObject();
+        delete band.__v;
 
         res.json({ message: "Band deactivated successfully", band });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Permanently delete a band (admin only)
+exports.delete_band_permanently = async (req, res) => {
+    try {
+        const { serial_number } = req.params;
+
+        const deleted_band = await HardwareBand.findOneAndDelete({ serial_number });
+
+        if (!deleted_band) {
+            return res.status(404).json({ message: "Band not found" });
+        }
+
+        res.status(200).json({ message: `Band with serial number ${serial_number} has been permanently deleted.` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Activate band (admin only)
+exports.activate_band = async (req, res) => {
+    try {
+        const { serial_number } = req.params;
+
+        const band_doc = await HardwareBand.findOneAndUpdate(
+            { serial_number },
+            { status: 'active' },
+            { new: true }
+        );
+
+        if (!band_doc) return res.status(404).json({ message: "Band not found" });
+
+        const band = band_doc.toObject();
+        delete band.__v;
+
+        res.json({ message: "Band activated successfully", band });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

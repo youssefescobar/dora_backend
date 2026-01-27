@@ -7,6 +7,12 @@ exports.register_user = async (req, res) => {
     try {
         const { full_name, email, password, phone_number } = req.body;
 
+        // Check if email is already registered for a non-pilgrim user
+        const existing_user = await User.findOne({ email, role: { $ne: 'pilgrim' } });
+        if (existing_user) {
+            return res.status(400).json({ message: "Email is already registered" });
+        }
+
         const hashed_password = await bcrypt.hash(password, 10);
         
         const user = await User.create({
@@ -47,7 +53,7 @@ exports.login_user = async (req, res) => {
 // Get current user profile
 exports.get_profile = async (req, res) => {
     try {
-        const user = await User.findById(req.user.id).select('-password');
+        const user = await User.findById(req.user.id).select('_id full_name email role phone_number created_at');
         
         if (!user) return res.status(404).json({ message: "User not found" });
         
@@ -69,7 +75,7 @@ exports.update_profile = async (req, res) => {
                 ...(phone_number && { phone_number })
             },
             { new: true }
-        ).select('-password');
+        ).select('_id full_name email role phone_number created_at');
 
         res.json({ message: "Profile updated successfully", user });
     } catch (error) {
@@ -80,7 +86,7 @@ exports.update_profile = async (req, res) => {
 // Register a pilgrim (by moderator/admin) - no password required
 exports.register_pilgrim = async (req, res) => {
     try {
-        const { full_name, national_id, medical_history, email } = req.body;
+        const { full_name, national_id, medical_history, email, age, gender } = req.body;
 
         // Check if pilgrim already exists with this national ID
         const existing = await User.findOne({ national_id });
@@ -93,6 +99,8 @@ exports.register_pilgrim = async (req, res) => {
             national_id,
             medical_history,
             email,
+            age,
+            gender,
             role: 'pilgrim',
             password: null // Pilgrims don't need passwords
         });
@@ -110,44 +118,40 @@ exports.register_pilgrim = async (req, res) => {
 // Search for pilgrims by national ID or name
 exports.search_pilgrims = async (req, res) => {
     try {
-        const { query, page = 1, limit = 20 } = req.query;
+        const { search, page = 1, limit = 20 } = req.query;
 
-        if (!query || query.trim().length === 0) {
+        if (!search || search.trim().length === 0) {
             return res.status(400).json({ message: "Search query is required" });
         }
 
         const pageNum = Math.max(1, parseInt(page) || 1);
-        const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20)); // Max 100 per page
+        const limitNum = Math.min(20, Math.max(1, parseInt(limit) || 20)); // Max 20 per page for search
         const skip = (pageNum - 1) * limitNum;
 
-        // Search by national ID or full name (case-insensitive)
-        const pilgrims = await User.find({
+        const searchQuery = {
             role: 'pilgrim',
             $or: [
-                { national_id: { $regex: query, $options: 'i' } },
-                { full_name: { $regex: query, $options: 'i' } }
+                { national_id: { $regex: search, $options: 'i' } },
+                { full_name: { $regex: search, $options: 'i' } }
             ]
-        })
-            .select('_id full_name national_id email phone_number medical_history')
+        };
+
+        const pilgrims = await User.find(searchQuery)
+            .select('_id full_name national_id email phone_number medical_history age gender')
             .skip(skip)
             .limit(limitNum);
 
-        // Get total count for pagination info
-        const total = await User.countDocuments({
-            role: 'pilgrim',
-            $or: [
-                { national_id: { $regex: query, $options: 'i' } },
-                { full_name: { $regex: query, $options: 'i' } }
-            ]
-        });
+        const total = await User.countDocuments(searchQuery);
 
         res.json({ 
-            count: pilgrims.length,
-            total,
-            page: pageNum,
-            limit: limitNum,
-            pages: Math.ceil(total / limitNum),
-            pilgrims 
+            success: true,
+            data: pilgrims,
+            pagination: {
+                page: pageNum,
+                limit: limitNum,
+                total: total,
+                pages: Math.ceil(total / limitNum)
+            }
         });
     } catch (error) {
         res.status(500).json({ error: error.message });

@@ -14,6 +14,7 @@ router.post('/users/promote', validate(require('../middleware/schemas').user_act
 router.post('/users/demote', validate(require('../middleware/schemas').user_action_schema), admin_ctrl.demote_user);
 router.post('/users/deactivate', validate(require('../middleware/schemas').user_action_schema), admin_ctrl.deactivate_user);
 router.post('/users/activate', validate(require('../middleware/schemas').user_action_schema), admin_ctrl.activate_user);
+router.delete('/users/:user_id/force', authorize('admin'), admin_ctrl.delete_user_permanently);
 
 // Group management
 router.get('/groups', admin_ctrl.get_all_groups);

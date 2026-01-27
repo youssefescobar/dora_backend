@@ -22,7 +22,11 @@ exports.create_group = async (req, res) => {
             moderator_ids: [req.user.id], // The creator is the first moderator
             created_by: req.user.id
         });
-        res.status(201).json(new_group);
+        
+        const group_obj = new_group.toObject();
+        delete group_obj.__v;
+
+        res.status(201).json(group_obj);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -31,26 +35,25 @@ exports.create_group = async (req, res) => {
 // 2. Dashboard: Get groups I belong to + Pilgrim info + Locations
 exports.get_my_groups = async (req, res) => {
     try {
-        const { page = 1, limit = 10 } = req.query || {};
+        const { page = 1, limit = 25 } = req.query || {};
 
         const pageNum = Math.max(1, parseInt(page) || 1);
-        const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 10)); // Max 50 per page
+        const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 25)); // Max 50 per page
         const skip = (pageNum - 1) * limitNum;
 
         if (!req.user || !req.user.id) {
             return res.status(401).json({ message: "User not authenticated" });
         }
 
-        // Get paginated groups
-        const groups = await Group.find({ moderator_ids: req.user.id })
+        const query = { moderator_ids: req.user.id };
+        const groups = await Group.find(query)
             .populate('moderator_ids', 'full_name email')
             .skip(skip)
             .limit(limitNum);
 
-        const total = await Group.countDocuments({ moderator_ids: req.user.id });
+        const total = await Group.countDocuments(query);
 
-        // Fetch band data for each pilgrim in the groups
-        const enriched_groups = await Promise.all(groups.map(async (group) => {
+        const enriched_data = await Promise.all(groups.map(async (group) => {
             if (!group) return null;
 
             const groupObj = group.toObject ? group.toObject() : group;
@@ -59,7 +62,7 @@ exports.get_my_groups = async (req, res) => {
             const pilgrims_with_locations = (await Promise.all(pilgrim_ids.map(async (pilgrim_id) => {
                 if (!pilgrim_id) return null;
 
-                const pilgrim = await User.findById(pilgrim_id).select('full_name email phone_number national_id medical_history');
+                const pilgrim = await User.findById(pilgrim_id).select('full_name email phone_number national_id medical_history age gender');
                 
                 if (!pilgrim) return null; 
 
@@ -72,24 +75,28 @@ exports.get_my_groups = async (req, res) => {
                     band_info: band ? {
                         serial_number: band.serial_number,
                         last_location: { lat: band.last_latitude, lng: band.last_longitude },
-                        last_updated: band.last_updated
+                        last_updated: band.last_updated,
+                        battery_percent: band.battery_percent // Include battery_percent
                     } : null
                 };
             }))).filter(Boolean); // Remove nulls
             
-            return { 
-                ...groupObj, 
-                pilgrims: pilgrims_with_locations,
-                pilgrim_count: pilgrims_with_locations.length
-            };
+            // Rename pilgrim_ids to pilgrims to match docs
+            delete groupObj.pilgrim_ids;
+            groupObj.pilgrims = pilgrims_with_locations;
+
+            return groupObj;
         }));
 
         res.json({
-            groups: enriched_groups.filter(Boolean),
-            page: pageNum,
-            limit: limitNum,
-            total,
-            pages: Math.ceil(total / limitNum)
+            success: true,
+            data: enriched_data.filter(Boolean),
+            pagination: {
+                page: pageNum,
+                limit: limitNum,
+                total: total,
+                pages: Math.ceil(total / limitNum)
+            }
         });
     } catch (error) {
         console.error("Error in get_my_groups:", error);
@@ -117,18 +124,22 @@ exports.assign_band_to_pilgrim = async (req, res) => {
             return res.status(404).json({ message: "Band not found" });
         }
 
-        // Unassign from any previous user
-        await HardwareBand.findOneAndUpdate(
-            { serial_number },
-            { current_user_id: null }
+        // Unassign from any previous user (if any)
+        await HardwareBand.updateOne(
+            { current_user_id: user_id },
+            { $set: { current_user_id: null } }
         );
 
         // Assign to the new user
-        const updated_band = await HardwareBand.findOneAndUpdate(
+        const updated_band_doc = await HardwareBand.findOneAndUpdate(
             { serial_number },
-            { current_user_id: user_id, status: 'active' },
+            { $set: { current_user_id: user_id, status: 'active' } },
             { new: true }
         );
+
+        const updated_band = updated_band_doc.toObject();
+        delete updated_band.__v;
+
 
         res.json({ message: "Band successfully assigned to pilgrim", band: updated_band });
     } catch (error) {
@@ -193,10 +204,9 @@ exports.send_individual_alert = async (req, res) => {
 // 5. Add pilgrim to group
 exports.add_pilgrim_to_group = async (req, res) => {
     try {
-        const { group_id } = req.params; // Get from URL parameter, not body
+        const { group_id } = req.params;
         const { user_id } = req.body;
 
-        // Prevent moderator from adding themselves as a pilgrim
         if (user_id === req.user.id) {
             return res.status(400).json({ message: "You cannot add yourself as a pilgrim to the group" });
         }
@@ -206,15 +216,22 @@ exports.add_pilgrim_to_group = async (req, res) => {
             return res.status(400).json({ message: "User must be a pilgrim" });
         }
 
-        const group = await Group.findByIdAndUpdate(
+        const updated_group = await Group.findByIdAndUpdate(
             group_id,
             { $addToSet: { pilgrim_ids: user_id } },
             { new: true }
-        ).populate('pilgrim_ids', 'full_name email phone_number national_id');
+        ).populate('pilgrim_ids', 'full_name email phone_number national_id age gender');
 
-        if (!group) return res.status(404).json({ message: "Group not found" });
+        if (!updated_group) return res.status(404).json({ message: "Group not found" });
 
-        res.json({ message: "Pilgrim added to group", group });
+        res.json({ 
+            message: "Pilgrim added to group", 
+            group: {
+                _id: updated_group._id,
+                group_name: updated_group.group_name,
+                pilgrim_ids: updated_group.pilgrim_ids
+            }
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -223,18 +240,25 @@ exports.add_pilgrim_to_group = async (req, res) => {
 // 6. Remove pilgrim from group
 exports.remove_pilgrim_from_group = async (req, res) => {
     try {
-        const { group_id } = req.params; // Get from URL parameter, not body
+        const { group_id } = req.params;
         const { user_id } = req.body;
 
-        const group = await Group.findByIdAndUpdate(
+        const updated_group = await Group.findByIdAndUpdate(
             group_id,
             { $pull: { pilgrim_ids: user_id } },
             { new: true }
-        ).populate('pilgrim_ids', 'full_name email phone_number national_id');
+        );
 
-        if (!group) return res.status(404).json({ message: "Group not found" });
+        if (!updated_group) return res.status(404).json({ message: "Group not found" });
 
-        res.json({ message: "Pilgrim removed from group", group });
+        res.json({ 
+            message: "Pilgrim removed from group", 
+            group: {
+                _id: updated_group._id,
+                group_name: updated_group.group_name,
+                pilgrim_ids: updated_group.pilgrim_ids
+            }
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

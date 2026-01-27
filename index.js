@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const connectDB = require('./config/db');
+const { http_logger } = require('./config/logger');
 const auth_routes = require('./routes/auth_routes');
 const hardware_routes = require('./routes/hardware_routes');
 const group_routes = require('./routes/group_routes');
@@ -14,14 +15,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Simple request logging middleware
-app.use((req, res, next) => {
-    console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.path}`);
-    if (req.body && Object.keys(req.body).length > 0) {
-        console.log('Body:', JSON.stringify(req.body, null, 2));
-    }
-    next();
-});
+// Use the winston http logger
+app.use(http_logger);
+
 
 // Database Connection
 connectDB();

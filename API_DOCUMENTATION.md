@@ -145,16 +145,19 @@ All paginated responses include:
 ### 5. Register Pilgrim (Admin/Moderator)
 - **POST** `/auth/register-pilgrim`
 - **Auth:** Moderator or Admin only
-- **Description:** Quickly register pilgrims without needing email/password. Used by moderators to onboard pilgrims.
+- **Description:** Quickly register pilgrims without needing a password. The email field is optional and allows duplicates. Used by moderators to onboard pilgrims.
 - **Body:**
   ```json
   {
     "full_name": "Ahmed Hassan",
     "national_id": "123456789",
     "medical_history": "Diabetic, takes insulin daily",
-    "email": "ahmed@example.com"
+    "email": "ahmed@example.com",
+    "age": 30,
+    "gender": "male"
   }
   ```
+- **Note:** `email`, `age`, and `gender` fields are optional.
 - **Response (201):**
   ```json
   {
@@ -193,7 +196,9 @@ All paginated responses include:
         "national_id": "123456789",
         "email": "ahmed@example.com",
         "phone_number": "+201234567890",
-        "medical_history": "Diabetic, takes insulin daily"
+        "medical_history": "Diabetic, takes insulin daily",
+        "age": 30,
+        "gender": "male"
       },
       {
         "_id": "60d5ec49c1234567890abce1",
@@ -201,7 +206,9 @@ All paginated responses include:
         "national_id": "987654321",
         "email": "ahmed.ali@example.com",
         "phone_number": "+201987654321",
-        "medical_history": null
+        "medical_history": null,
+        "age": 25,
+        "gender": "male"
       }
     ],
     "pagination": {
@@ -271,13 +278,16 @@ All paginated responses include:
           "email": "ahmed@example.com",
           "phone_number": "+201234567890",
           "medical_history": "Diabetic, takes insulin daily",
+          "age": 30,
+          "gender": "male",
           "band_info": {
             "serial_number": "BAND-001",
             "last_location": {
               "lat": 21.4225,
               "lng": 39.8262
             },
-            "last_updated": "2024-01-26T15:30:00Z"
+            "last_updated": "2024-01-26T15:30:00Z",
+            "battery_percent": 85
           }
         }
       ]
@@ -316,7 +326,9 @@ All paginated responses include:
           "full_name": "Ahmed Hassan",
           "email": "ahmed@example.com",
           "phone_number": "+201234567890",
-          "national_id": "123456789"
+          "national_id": "123456789",
+          "age": 30,
+          "gender": "male"
         }
       ]
     }
@@ -441,13 +453,14 @@ All paginated responses include:
 
 ### 13. Report Location (Public)
 - **POST** `/hardware/ping`
-- **Public** (No auth required - for wristband use)
+- **Description:** Public (No auth required - for wristband use). Includes optional `battery_percent`.
 - **Body:**
   ```json
   {
     "serial_number": "BAND-001",
     "lat": 21.4225,
-    "lng": 39.8262
+    "lng": 39.8262,
+    "battery_percent": 85
   }
   ```
 - **Response (200):**
@@ -465,7 +478,8 @@ All paginated responses include:
   ```json
   {
     "serial_number": "BAND-002",
-    "imei": "358938070000001"
+    "imei": "358938070000001",
+    "battery_percent": 100
   }
   ```
 - **Response (201):**
@@ -476,6 +490,7 @@ All paginated responses include:
       "_id": "60d5f1a9c1234567890abce2",
       "serial_number": "BAND-002",
       "imei": "358938070000001",
+      "battery_percent": 100,
       "status": "active",
       "current_user_id": null,
       "last_latitude": null,
@@ -502,9 +517,10 @@ All paginated responses include:
       "_id": "60d5f1a9c1234567890abce1",
       "serial_number": "BAND-001",
       "imei": "358938070000000",
+      "battery_percent": 85,
       "status": "active",
       "current_user_id": {
-        "_id": "60d5ec49c1234567890abce0",
+        "_id": "60d5ec49c1234567890abcde",
         "full_name": "Ahmed Hassan",
         "email": "ahmed@example.com",
         "phone_number": "+201234567890"
@@ -533,6 +549,7 @@ All paginated responses include:
     "_id": "60d5f1a9c1234567890abce1",
     "serial_number": "BAND-001",
     "imei": "358938070000000",
+    "battery_percent": 85,
     "status": "active",
     "current_user_id": {
       "_id": "60d5ec49c1234567890abce0",
@@ -558,11 +575,47 @@ All paginated responses include:
       "_id": "60d5f1a9c1234567890abce1",
       "serial_number": "BAND-001",
       "imei": "358938070000000",
+      "battery_percent": 85,
       "status": "inactive",
       "current_user_id": null,
       "last_latitude": 21.4225,
       "last_longitude": 39.8262,
       "last_updated": "2024-01-26T15:45:30Z"
+    }
+  }
+  ```
+
+### 17.5 Permanently Delete Band (Admin)
+- **DELETE** `/hardware/bands/:serial_number/force`
+- **Auth:** Admin only
+- **Params:** `serial_number` (string)
+- **Description:** Permanently deletes a hardware band from the database. This action cannot be undone.
+- **Response (200):**
+  ```json
+  {
+    "message": "Band with serial number BAND-001 has been permanently deleted."
+  }
+  ```
+
+### 17.6 Activate Band (Admin)
+- **POST** `/hardware/bands/:serial_number/activate`
+- **Auth:** Admin only
+- **Params:** `serial_number` (string)
+- **Description:** Activates a hardware band, setting its status to 'active'.
+- **Response (200):**
+  ```json
+  {
+    "message": "Band activated successfully",
+    "band": {
+      "_id": "60d5f1a9c1234567890abce1",
+      "serial_number": "BAND-001",
+      "imei": "358938070000000",
+      "battery_percent": 85,
+      "status": "active",
+      "current_user_id": null,
+      "last_latitude": null,
+      "last_longitude": null,
+      "last_updated": null
     }
   }
   ```
@@ -764,6 +817,18 @@ All paginated responses include:
       "_id": "60d5ec49c1234567890abcde",
       "active": true
     }
+  }
+  ```
+
+### 24.5 Permanently Delete User (Admin)
+- **DELETE** `/admin/users/:user_id/force`
+- **Auth:** Admin only
+- **Params:** `user_id` (MongoDB ID)
+- **Description:** Permanently deletes a user from the database. This action also removes the user from any groups and unassigns any bands. This action cannot be undone.
+- **Response (200):**
+  ```json
+  {
+    "message": "User with ID 60d5ec49c1234567890abcde has been permanently deleted."
   }
   ```
 

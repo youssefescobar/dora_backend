@@ -14,8 +14,10 @@ router.use(protect);
 
 // Admin only
 router.post('/register', authorize('admin'), validate(register_band_schema), hard_ctrl.register_band);
-router.get('/bands', authorize('admin'), hard_ctrl.get_all_bands);
+router.get('/bands', authorize('admin', 'moderator'), hard_ctrl.get_all_bands);
 router.get('/bands/:serial_number', authorize('admin'), hard_ctrl.get_band);
 router.delete('/bands/:serial_number', authorize('admin'), hard_ctrl.deactivate_band);
+router.delete('/bands/:serial_number/force', authorize('admin'), hard_ctrl.delete_band_permanently);
+router.post('/bands/:serial_number/activate', authorize('admin'), hard_ctrl.activate_band);
 
 module.exports = router;
