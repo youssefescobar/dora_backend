@@ -110,11 +110,15 @@ exports.register_pilgrim = async (req, res) => {
 // Search for pilgrims by national ID or name
 exports.search_pilgrims = async (req, res) => {
     try {
-        const { query } = req.query;
+        const { query, page = 1, limit = 20 } = req.query;
 
         if (!query || query.trim().length === 0) {
             return res.status(400).json({ message: "Search query is required" });
         }
+
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20)); // Max 100 per page
+        const skip = (pageNum - 1) * limitNum;
 
         // Search by national ID or full name (case-insensitive)
         const pilgrims = await User.find({
@@ -123,10 +127,26 @@ exports.search_pilgrims = async (req, res) => {
                 { national_id: { $regex: query, $options: 'i' } },
                 { full_name: { $regex: query, $options: 'i' } }
             ]
-        }).select('_id full_name national_id email phone_number medical_history').limit(20);
+        })
+            .select('_id full_name national_id email phone_number medical_history')
+            .skip(skip)
+            .limit(limitNum);
+
+        // Get total count for pagination info
+        const total = await User.countDocuments({
+            role: 'pilgrim',
+            $or: [
+                { national_id: { $regex: query, $options: 'i' } },
+                { full_name: { $regex: query, $options: 'i' } }
+            ]
+        });
 
         res.json({ 
             count: pilgrims.length,
+            total,
+            page: pageNum,
+            limit: limitNum,
+            pages: Math.ceil(total / limitNum),
             pilgrims 
         });
     } catch (error) {

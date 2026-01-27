@@ -13,6 +13,51 @@ Authorization: Bearer <token>
 
 ---
 
+## Rate Limiting
+
+All endpoints are protected with rate limiting to prevent abuse:
+
+| Endpoint Type | Limit | Window | Applied To |
+|--------------|-------|--------|------------|
+| Auth Limiter | 5 attempts | 15 minutes | POST /api/auth/register, POST /api/auth/login |
+| Hardware Limiter | 1000 requests | 1 minute | POST /api/hardware/ping |
+| Search Limiter | 30 requests | 1 minute | GET /api/auth/search-pilgrims |
+| General Limiter | 100 requests | 15 minutes | All other protected endpoints |
+
+**Rate Limit Exceeded Response** (HTTP 429):
+```json
+{
+  "error": "Too many requests, please try again later."
+}
+```
+
+---
+
+## Pagination
+
+List endpoints support pagination with the following query parameters:
+
+### Query Parameters
+- `page` (optional): Page number, default = 1, minimum = 1
+- `limit` (optional): Items per page, default varies by endpoint, maximum = 100 for admin endpoints, 50 for groups, 20 for search
+
+### Response Format
+All paginated responses include:
+```json
+{
+  "success": true,
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 150,
+    "pages": 8
+  }
+}
+```
+
+---
+
 ## 🔐 Authentication Endpoints (`/auth`)
 
 ### 1. Register User
@@ -121,24 +166,27 @@ Authorization: Bearer <token>
 - **Note:** Pilgrims don't require a password and cannot login to the app. They are identified by their national ID and wristband assignment.
 
 ### 6. Search Pilgrims (Admin/Moderator)
-- **GET** `/auth/search-pilgrims?query=<search_term>`
+- **GET** `/auth/search-pilgrims?search=<search_term>&page=1&limit=20`
 - **Auth:** Moderator or Admin only
-- **Description:** Search for pilgrims by national ID or full name. Returns up to 20 results.
+- **Rate Limit:** 30 requests per minute
+- **Description:** Search for pilgrims by national ID or full name (paginated).
 - **Query Parameters:**
-  - `query` (required): Search term (national ID or name, case-insensitive)
+  - `search` (required): Search term (national ID or name, case-insensitive)
+  - `page` (optional): Page number, default = 1
+  - `limit` (optional): Items per page, default = 20, max = 20
 - **Examples:**
   ```bash
   # Search by national ID
-  GET /api/auth/search-pilgrims?query=123456789
+  GET /api/auth/search-pilgrims?search=123456789&page=1&limit=20
   
   # Search by name
-  GET /api/auth/search-pilgrims?query=Ahmed
+  GET /api/auth/search-pilgrims?search=Ahmed&page=2&limit=15
   ```
 - **Response (200):**
   ```json
   {
-    "count": 2,
-    "pilgrims": [
+    "success": true,
+    "data": [
       {
         "_id": "60d5ec49c1234567890abce0",
         "full_name": "Ahmed Hassan",
@@ -155,7 +203,13 @@ Authorization: Bearer <token>
         "phone_number": "+201987654321",
         "medical_history": null
       }
-    ]
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 45,
+      "pages": 3
+    }
   }
   ```
 
@@ -188,11 +242,17 @@ Authorization: Bearer <token>
 - **Error (400):** If you already have a group with this name
 
 ### 8. Get My Groups (Dashboard)
-- **GET** `/groups/dashboard`
+- **GET** `/groups/dashboard?page=1&limit=25`
 - **Auth:** Moderator or Admin
+- **Rate Limit:** 100 requests per 15 minutes
+- **Query Parameters:**
+  - `page` (optional): Page number, default = 1
+  - `limit` (optional): Items per page, default = 25, max = 50
 - **Response (200):**
   ```json
-  [
+  {
+    "success": true,
+    "data": [
     {
       "_id": "60d5f1a9c1234567890abcdf",
       "group_name": "Hajj Group 2024",
@@ -222,7 +282,14 @@ Authorization: Bearer <token>
         }
       ]
     }
-  ]
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 25,
+      "total": 5,
+      "pages": 1
+    }
+  }
   ```
 
 ### 9. Add Pilgrim to Group
@@ -418,12 +485,19 @@ Authorization: Bearer <token>
   }
   ```
 
-### 15. Get All Bands (Admin)
-- **GET** `/hardware/bands`
-- **Auth:** Admin only
+### 15. Get All Bands (Moderator/Admin)
+- **GET** `/hardware/bands?page=1&limit=50&status=active`
+- **Auth:** Moderator or Admin
+- **Rate Limit:** 100 requests per 15 minutes
+- **Query Parameters:**
+  - `page` (optional): Page number, default = 1
+  - `limit` (optional): Items per page, default = 50, max = 100
+  - `status` (optional): Filter by status - `active`, `maintenance`, or `inactive`
 - **Response (200):**
   ```json
-  [
+  {
+    "success": true,
+    "data": [
     {
       "_id": "60d5f1a9c1234567890abce1",
       "serial_number": "BAND-001",
@@ -439,7 +513,14 @@ Authorization: Bearer <token>
       "last_longitude": 39.8262,
       "last_updated": "2024-01-26T15:45:30Z"
     }
-  ]
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 50,
+      "total": 120,
+      "pages": 3
+    }
+  }
   ```
 
 ### 16. Get Band Details (Admin)
@@ -482,6 +563,206 @@ Authorization: Bearer <token>
       "last_latitude": 21.4225,
       "last_longitude": 39.8262,
       "last_updated": "2024-01-26T15:45:30Z"
+    }
+  }
+  ```
+
+---
+
+## 👨‍💼 Admin Endpoints (`/admin`)
+
+**All admin routes require authentication with admin role**
+
+### 18. Get All Users
+- **GET** `/admin/users?page=1&limit=50&role=moderator`
+- **Auth:** Admin only
+- **Rate Limit:** 100 requests per 15 minutes
+- **Description:** List all users in the system with optional role filtering (paginated).
+- **Query Parameters:**
+  - `page` (optional): Page number, default = 1
+  - `limit` (optional): Items per page, default = 50, max = 100
+  - `role` (optional): Filter by role - `admin`, `moderator`, or `pilgrim`
+- **Examples:**
+  ```bash
+  # Get all moderators
+  GET /api/admin/users?role=moderator&page=1&limit=30
+  
+  # Get all pilgrims
+  GET /api/admin/users?role=pilgrim&page=2&limit=50
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "_id": "60d5ec49c1234567890abcde",
+        "full_name": "Ahmed Hassan",
+        "email": "ahmed@example.com",
+        "phone_number": "+201234567890",
+        "role": "moderator",
+        "active": true,
+        "created_at": "2024-01-20T10:00:00Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 50,
+      "total": 25,
+      "pages": 1
+    }
+  }
+  ```
+
+### 19. Get All Groups
+- **GET** `/admin/groups?page=1&limit=30`
+- **Auth:** Admin only
+- **Rate Limit:** 100 requests per 15 minutes
+- **Description:** List all groups in the system with moderator/creator details (paginated).
+- **Query Parameters:**
+  - `page` (optional): Page number, default = 1
+  - `limit` (optional): Items per page, default = 30, max = 100
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "_id": "60d5f1a9c1234567890abcdf",
+        "group_name": "Hajj Group A",
+        "created_by": {
+          "_id": "60d5ec49c1234567890abcde",
+          "full_name": "Ahmed Hassan"
+        },
+        "moderator_ids": ["60d5ec49c1234567890abcde"],
+        "pilgrim_count": 5,
+        "created_at": "2024-01-20T10:00:00Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 30,
+      "total": 12,
+      "pages": 1
+    }
+  }
+  ```
+
+### 20. Get System Statistics
+- **GET** `/admin/stats`
+- **Auth:** Admin only
+- **Rate Limit:** 100 requests per 15 minutes
+- **Description:** Retrieve overall system statistics (user counts, group stats, band data).
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "stats": {
+      "total_users": 150,
+      "admins": 2,
+      "moderators": 25,
+      "pilgrims": 123,
+      "active_users": 145,
+      "inactive_users": 5,
+      "total_groups": 12,
+      "total_bands": 120,
+      "active_bands": 115,
+      "maintenance_bands": 3,
+      "inactive_bands": 2
+    }
+  }
+  ```
+
+### 21. Promote User to Admin
+- **POST** `/admin/users/promote`
+- **Auth:** Admin only
+- **Rate Limit:** 100 requests per 15 minutes
+- **Description:** Elevate a moderator to admin role.
+- **Body:**
+  ```json
+  {
+    "user_id": "60d5ec49c1234567890abcde"
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "User promoted to admin",
+    "user": {
+      "_id": "60d5ec49c1234567890abcde",
+      "full_name": "Ahmed Hassan",
+      "role": "admin"
+    }
+  }
+  ```
+
+### 22. Demote User from Admin
+- **POST** `/admin/users/demote`
+- **Auth:** Admin only
+- **Rate Limit:** 100 requests per 15 minutes
+- **Description:** Remove admin privileges and revert to moderator (removes from group moderator lists).
+- **Body:**
+  ```json
+  {
+    "user_id": "60d5ec49c1234567890abcde"
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "User demoted to moderator",
+    "user": {
+      "_id": "60d5ec49c1234567890abcde",
+      "full_name": "Ahmed Hassan",
+      "role": "moderator"
+    }
+  }
+  ```
+
+### 23. Deactivate User
+- **POST** `/admin/users/deactivate`
+- **Auth:** Admin only
+- **Rate Limit:** 100 requests per 15 minutes
+- **Description:** Deactivate a user account (prevents login).
+- **Body:**
+  ```json
+  {
+    "user_id": "60d5ec49c1234567890abcde"
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "User deactivated",
+    "user": {
+      "_id": "60d5ec49c1234567890abcde",
+      "active": false
+    }
+  }
+  ```
+
+### 24. Activate User
+- **POST** `/admin/users/activate`
+- **Auth:** Admin only
+- **Rate Limit:** 100 requests per 15 minutes
+- **Description:** Reactivate a deactivated user account.
+- **Body:**
+  ```json
+  {
+    "user_id": "60d5ec49c1234567890abcde"
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "User activated",
+    "user": {
+      "_id": "60d5ec49c1234567890abcde",
+      "active": true
     }
   }
   ```
@@ -540,7 +821,6 @@ All error responses follow this format:
 
 ---
 
-## Typical Workflow
 
 ## Typical Workflow
 
@@ -562,131 +842,6 @@ All error responses follow this format:
 
 ---
 
-## Testing with cURL or Postman
-
-### 1. Register a New User (defaults to pilgrim)
-```bash
-curl -X POST http://localhost:5000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "full_name": "John Moderator",
-    "email": "john@example.com",
-    "password": "password123",
-    "phone_number": "+201234567890"
-  }'
-```
-
-### 2. Login
-```bash
-curl -X POST http://localhost:5000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "john@example.com",
-    "password": "password123"
-  }'
-```
-
-### 3. Register a Pilgrim (requires moderator role + token)
-```bash
-curl -X POST http://localhost:5000/api/auth/register-pilgrim \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{
-    "full_name": "Ahmed Hassan",
-    "national_id": "123456789",
-    "medical_history": "Diabetic, takes insulin",
-    "email": "ahmed@example.com"
-  }'
-```
-
-### 4. Search Pilgrims (requires moderator role + token)
-```bash
-# Search by national ID
-curl -X GET "http://localhost:5000/api/auth/search-pilgrims?query=123456789" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
-
-# Search by name
-curl -X GET "http://localhost:5000/api/auth/search-pilgrims?query=Ahmed" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
-```
-
-### 5. Create a Group (use token from login)
-```bash
-curl -X POST http://localhost:5000/api/groups/create \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{
-    "group_name": "Hajj Group 2024"
-  }'
-```
-
-### 6. Add Pilgrim to Group
-```bash
-curl -X POST http://localhost:5000/api/groups/GROUP_ID/add-pilgrim \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{
-    "user_id": "PILGRIM_USER_ID"
-  }'
-```
-
-### 7. Assign Band to Pilgrim
-```bash
-curl -X POST http://localhost:5000/api/groups/assign-band \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{
-    "serial_number": "BAND-001",
-    "user_id": "PILGRIM_USER_ID"
-  }'
-```
-
-### 8. Wristband Report Location (no auth required)
-```bash
-curl -X POST http://localhost:5000/api/hardware/ping \
-  -H "Content-Type: application/json" \
-  -d '{
-    "serial_number": "BAND-001",
-    "lat": 21.4225,
-    "lng": 39.8262
-  }'
-```
-
-### 9. Send Group Alert
-```bash
-curl -X POST http://localhost:5000/api/groups/send-alert \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{
-    "group_id": "GROUP_ID",
-    "message_text": "Please stay together at gate 5"
-  }'
-```
-
-### 9.1 Send Individual Alert
-```bash
-curl -X POST http://localhost:5000/api/groups/send-individual-alert \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -d '{
-    "user_id": "PILGRIM_USER_ID",
-    "message_text": "Please return to meeting point"
-  }'
-```
-
-### 10. Get Group Dashboard
-```bash
-curl -X GET http://localhost:5000/api/groups/dashboard \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
-```
-
-### 11. Delete Group
-```bash
-curl -X DELETE http://localhost:5000/api/groups/GROUP_ID \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
-```
-
----
 
 ## Notes
 - Tokens expire in 24 hours
@@ -699,3 +854,7 @@ curl -X DELETE http://localhost:5000/api/groups/GROUP_ID \
 - **Group names are unique per moderator** - a moderator cannot create two groups with the same name
 - **Moderators cannot add themselves as pilgrims** - moderator/pilgrim roles are separate
 - **Multiple moderators** - groups can have multiple moderators managing the same pilgrims
+- **Rate Limiting:** All endpoints are protected. Exceeding limits returns HTTP 429 with error message
+- **Pagination:** List endpoints support page and limit query parameters. Default limits vary per endpoint (20-50)
+- **Admin Panel:** Admin users can manage other users, view all groups, access system statistics
+- **User Deactivation:** Admins can deactivate users without deleting data. Deactivated users cannot login

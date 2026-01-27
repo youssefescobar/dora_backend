@@ -31,32 +31,68 @@ exports.create_group = async (req, res) => {
 // 2. Dashboard: Get groups I belong to + Pilgrim info + Locations
 exports.get_my_groups = async (req, res) => {
     try {
-        // Populates pilgrims and their specific hardware bands to see real-time data
+        const { page = 1, limit = 10 } = req.query || {};
+
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 10)); // Max 50 per page
+        const skip = (pageNum - 1) * limitNum;
+
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ message: "User not authenticated" });
+        }
+
+        // Get paginated groups
         const groups = await Group.find({ moderator_ids: req.user.id })
-            .populate({
-                path: 'pilgrim_ids',
-                select: 'full_name email phone_number'
-            })
-            .populate('moderator_ids', 'full_name email');
-        
+            .populate('moderator_ids', 'full_name email')
+            .skip(skip)
+            .limit(limitNum);
+
+        const total = await Group.countDocuments({ moderator_ids: req.user.id });
+
         // Fetch band data for each pilgrim in the groups
         const enriched_groups = await Promise.all(groups.map(async (group) => {
-            const pilgrims_with_locations = await Promise.all(group.pilgrim_ids.map(async (pilgrim) => {
-                const band = await HardwareBand.findOne({ current_user_id: pilgrim._id });
+            if (!group) return null;
+
+            const groupObj = group.toObject ? group.toObject() : group;
+            const pilgrim_ids = group.pilgrim_ids || [];
+
+            const pilgrims_with_locations = (await Promise.all(pilgrim_ids.map(async (pilgrim_id) => {
+                if (!pilgrim_id) return null;
+
+                const pilgrim = await User.findById(pilgrim_id).select('full_name email phone_number national_id medical_history');
+                
+                if (!pilgrim) return null; 
+
+                const band = await HardwareBand.findOne({ current_user_id: pilgrim_id });
+                
+                const pilgrimObj = pilgrim.toObject ? pilgrim.toObject() : pilgrim;
+
                 return {
-                    ...pilgrim._doc,
+                    ...pilgrimObj,
                     band_info: band ? {
                         serial_number: band.serial_number,
                         last_location: { lat: band.last_latitude, lng: band.last_longitude },
                         last_updated: band.last_updated
                     } : null
                 };
-            }));
-            return { ...group._doc, pilgrims: pilgrims_with_locations };
+            }))).filter(Boolean); // Remove nulls
+            
+            return { 
+                ...groupObj, 
+                pilgrims: pilgrims_with_locations,
+                pilgrim_count: pilgrims_with_locations.length
+            };
         }));
 
-        res.json(enriched_groups);
+        res.json({
+            groups: enriched_groups.filter(Boolean),
+            page: pageNum,
+            limit: limitNum,
+            total,
+            pages: Math.ceil(total / limitNum)
+        });
     } catch (error) {
+        console.error("Error in get_my_groups:", error);
         res.status(500).json({ error: error.message });
     }
 };

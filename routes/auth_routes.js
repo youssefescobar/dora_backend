@@ -4,10 +4,11 @@ const auth_ctrl = require('../controllers/auth_controller');
 const { protect, authorize } = require('../middleware/auth_middleware');
 const validate = require('../middleware/validation_middleware');
 const { register_schema, login_schema, update_profile_schema } = require('../middleware/schemas');
+const { authLimiter } = require('../middleware/rate_limit');
 
-// Public routes
-router.post('/register', validate(register_schema), auth_ctrl.register_user);
-router.post('/login', validate(login_schema), auth_ctrl.login_user);
+// Public routes with rate limiting
+router.post('/register', authLimiter, validate(register_schema), auth_ctrl.register_user);
+router.post('/login', authLimiter, validate(login_schema), auth_ctrl.login_user);
 
 // Protected routes
 router.use(protect);

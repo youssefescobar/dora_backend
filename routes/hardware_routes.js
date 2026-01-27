@@ -4,9 +4,10 @@ const hard_ctrl = require('../controllers/hardware_controller');
 const { protect, authorize } = require('../middleware/auth_middleware');
 const validate = require('../middleware/validation_middleware');
 const { report_location_schema, register_band_schema } = require('../middleware/schemas');
+const { hardwareLimiter } = require('../middleware/rate_limit');
 
-// Public endpoint for wristband to report location
-router.post('/ping', validate(report_location_schema), hard_ctrl.report_location);
+// Public endpoint for wristband to report location with rate limiting
+router.post('/ping', hardwareLimiter, validate(report_location_schema), hard_ctrl.report_location);
 
 // Protected endpoints
 router.use(protect);

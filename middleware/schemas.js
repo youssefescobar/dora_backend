@@ -60,3 +60,7 @@ exports.send_individual_alert_schema = Joi.object({
     user_id: Joi.string().required(),
     message_text: Joi.string().required().min(1).max(500)
 });
+
+exports.user_action_schema = Joi.object({
+    user_id: Joi.string().required()
+});

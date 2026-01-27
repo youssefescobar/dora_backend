@@ -26,10 +26,31 @@ exports.report_location = async (req, res) => {
 // Get all bands (admin only)
 exports.get_all_bands = async (req, res) => {
     try {
-        const bands = await HardwareBand.find()
-            .populate('current_user_id', 'full_name email phone_number');
-        
-        res.json(bands);
+        const { page = 1, limit = 20, status } = req.query;
+
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+        const skip = (pageNum - 1) * limitNum;
+
+        // Build query
+        const query = status ? { status } : {};
+
+        // Get bands with pagination
+        const bands = await HardwareBand.find(query)
+            .populate('current_user_id', 'full_name email phone_number national_id')
+            .skip(skip)
+            .limit(limitNum);
+
+        // Get total count
+        const total = await HardwareBand.countDocuments(query);
+
+        res.json({
+            bands,
+            page: pageNum,
+            limit: limitNum,
+            total,
+            pages: Math.ceil(total / limitNum)
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

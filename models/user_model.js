@@ -12,6 +12,7 @@ const user_schema = new mongoose.Schema({
     },
     phone_number: { type: String, unique: true, sparse: true }, // Each user has unique phone number
     medical_history: String, // Optional medical information for pilgrims
+    active: { type: Boolean, default: true }, // Track if account is active
     created_at: { type: Date, default: Date.now }
 });
 
