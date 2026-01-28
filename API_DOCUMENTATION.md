@@ -824,6 +824,24 @@ All paginated responses include:
   }
   ```
 
+### 19.5 Permanently Delete Group (Admin)
+- **DELETE** `/admin/groups/:group_id`
+- **Auth:** Admin only
+- **Params:** `group_id` (MongoDB ID)
+- **Description:** Permanently deletes a group from the database. This action cannot be undone.
+- **Response (200):**
+  ```json
+  {
+    "message": "Group with ID 60d5f1a9c1234567890abcdf has been permanently deleted."
+  }
+  ```
+- **Error (404):**
+  ```json
+  {
+    "message": "Group not found"
+  }
+  ```
+
 ### 20. Get System Statistics
 - **GET** `/admin/stats`
 - **Auth:** Admin only

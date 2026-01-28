@@ -18,6 +18,7 @@ router.delete('/users/:user_id/force', authorize('admin'), admin_ctrl.delete_use
 
 // Group management
 router.get('/groups', admin_ctrl.get_all_groups);
+router.delete('/groups/:group_id', admin_ctrl.delete_group_by_id);
 
 // System stats
 router.get('/stats', admin_ctrl.get_system_stats);

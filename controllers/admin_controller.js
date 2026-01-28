@@ -232,3 +232,20 @@ exports.delete_user_permanently = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// Permanently delete a group (admin only)
+exports.delete_group_by_id = async (req, res) => {
+    try {
+        const { group_id } = req.params;
+
+        const deleted_group = await Group.findOneAndDelete({ _id: group_id });
+
+        if (!deleted_group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+        
+        res.status(200).json({ message: `Group with ID ${group_id} has been permanently deleted.` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
