@@ -1,4 +1,5 @@
 const User = require('../models/user_model');
+const Pilgrim = require('../models/pilgrim_model');
 const Group = require('../models/group_model');
 const HardwareBand = require('../models/hardware_band_model');
 
@@ -11,15 +12,25 @@ exports.get_all_users = async (req, res) => {
         const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 50));
         const skip = (pageNum - 1) * limitNum;
 
-        const query = role ? { role } : {};
+        let users;
+        let total;
 
-        const users = await User.find(query)
-            .select('_id full_name email phone_number role active created_at')
-            .skip(skip)
-            .limit(limitNum)
-            .lean();
-
-        const total = await User.countDocuments(query);
+        if (role === 'pilgrim') {
+            users = await Pilgrim.find({})
+                .select('_id full_name email phone_number active created_at')
+                .skip(skip)
+                .limit(limitNum)
+                .lean();
+            total = await Pilgrim.countDocuments();
+        } else {
+            const query = role ? { role } : {};
+            users = await User.find(query)
+                .select('_id full_name email phone_number role active created_at')
+                .skip(skip)
+                .limit(limitNum)
+                .lean();
+            total = await User.countDocuments(query);
+        }
 
         res.json({
             success: true,
@@ -72,12 +83,20 @@ exports.get_all_groups = async (req, res) => {
 // Get system statistics
 exports.get_system_stats = async (req, res) => {
     try {
-        const total_users = await User.countDocuments();
+        const total_users_count = await User.countDocuments();
+        const pilgrims_count = await Pilgrim.countDocuments();
+        const total_users = total_users_count + pilgrims_count;
+
         const moderators = await User.countDocuments({ role: 'moderator' });
-        const pilgrims = await User.countDocuments({ role: 'pilgrim' });
         const admins = await User.countDocuments({ role: 'admin' });
-        const active_users = await User.countDocuments({ active: true });
-        const inactive_users = await User.countDocuments({ active: false });
+        
+        const active_users_count = await User.countDocuments({ active: true });
+        const active_pilgrims_count = await Pilgrim.countDocuments({ active: true });
+        const active_users = active_users_count + active_pilgrims_count;
+
+        const inactive_users_count = await User.countDocuments({ active: false });
+        const inactive_pilgrims_count = await Pilgrim.countDocuments({ active: false });
+        const inactive_users = inactive_users_count + inactive_pilgrims_count;
 
         const total_groups = await Group.countDocuments();
         const total_bands = await HardwareBand.countDocuments();
@@ -103,7 +122,7 @@ exports.get_system_stats = async (req, res) => {
                 total_users,
                 admins,
                 moderators,
-                pilgrims,
+                pilgrims: pilgrims_count,
                 active_users,
                 inactive_users,
                 total_groups,
@@ -121,8 +140,8 @@ exports.get_system_stats = async (req, res) => {
     }
 };
 
-// Promote user to moderator
-exports.promote_user = async (req, res) => {
+// Promote user to admin
+exports.promote_to_admin = async (req, res) => {
     try {
         const { user_id } = req.body;
 
@@ -133,26 +152,58 @@ exports.promote_user = async (req, res) => {
             return res.status(400).json({ message: "User is already an admin" });
         }
 
-        user.role = 'moderator';
+        user.role = 'admin';
         await user.save();
 
-        res.json({ message: `User promoted to moderator`, user });
+        res.json({ message: `User promoted to admin`, user });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
 
-// Demote moderator to pilgrim
-exports.demote_user = async (req, res) => {
+// Demote admin to moderator
+exports.demote_to_moderator = async (req, res) => {
     try {
         const { user_id } = req.body;
 
         const user = await User.findById(user_id);
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        if (user.role === 'pilgrim') {
-            return res.status(400).json({ message: "User is already a pilgrim" });
+        if (user.role === 'moderator') {
+            return res.status(400).json({ message: "User is already a moderator" });
         }
+
+        user.role = 'moderator';
+        await user.save();
+
+        res.json({ message: "User demoted to moderator", user });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Demote moderator to pilgrim
+exports.demote_to_pilgrim = async (req, res) => {
+    try {
+        const { user_id } = req.body;
+
+        const user = await User.findById(user_id);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        if (user.role !== 'moderator') {
+            return res.status(400).json({ message: "Only moderators can be demoted to pilgrims" });
+        }
+
+        // Create a new pilgrim with the user's data
+        const pilgrim = await Pilgrim.create({
+            full_name: user.full_name,
+            phone_number: user.phone_number,
+            email: user.email,
+            // any other fields to be transferred
+        });
+
+        // Remove the user
+        await User.findByIdAndDelete(user_id);
 
         // Remove them from group moderator lists
         await Group.updateMany(
@@ -160,10 +211,7 @@ exports.demote_user = async (req, res) => {
             { $pull: { moderator_ids: user_id } }
         );
 
-        user.role = 'pilgrim';
-        await user.save();
-
-        res.json({ message: "User demoted to pilgrim", user });
+        res.json({ message: "User demoted to pilgrim", pilgrim_id: pilgrim._id });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -174,14 +222,21 @@ exports.deactivate_user = async (req, res) => {
     try {
         const { user_id } = req.body;
 
-        const user = await User.findById(user_id);
-        if (!user) return res.status(404).json({ message: "User not found" });
+        let user = await User.findById(user_id);
+        if (user) {
+            user.active = false;
+            await user.save();
+            return res.json({ message: "User deactivated", user });
+        }
 
-        // Add an 'active' field to track status
-        user.active = false;
-        await user.save();
+        let pilgrim = await Pilgrim.findById(user_id);
+        if (pilgrim) {
+            pilgrim.active = false;
+            await pilgrim.save();
+            return res.json({ message: "Pilgrim deactivated", pilgrim });
+        }
 
-        res.json({ message: "User deactivated", user });
+        return res.status(404).json({ message: "User or pilgrim not found" });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -192,13 +247,21 @@ exports.activate_user = async (req, res) => {
     try {
         const { user_id } = req.body;
 
-        const user = await User.findById(user_id);
-        if (!user) return res.status(404).json({ message: "User not found" });
+        let user = await User.findById(user_id);
+        if (user) {
+            user.active = true;
+            await user.save();
+            return res.json({ message: "User activated", user });
+        }
 
-        user.active = true;
-        await user.save();
+        let pilgrim = await Pilgrim.findById(user_id);
+        if (pilgrim) {
+            pilgrim.active = true;
+            await pilgrim.save();
+            return res.json({ message: "Pilgrim activated", pilgrim });
+        }
 
-        res.json({ message: "User activated", user });
+        return res.status(404).json({ message: "User or pilgrim not found" });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -209,10 +272,16 @@ exports.delete_user_permanently = async (req, res) => {
     try {
         const { user_id } = req.params;
 
-        const deleted_user = await User.findOneAndDelete({ _id: user_id });
+        let deleted_user = await User.findOneAndDelete({ _id: user_id });
+        let message = `User with ID ${user_id} has been permanently deleted.`;
 
         if (!deleted_user) {
-            return res.status(404).json({ message: "User not found" });
+            deleted_user = await Pilgrim.findOneAndDelete({ _id: user_id });
+            message = `Pilgrim with ID ${user_id} has been permanently deleted.`;
+        }
+
+        if (!deleted_user) {
+            return res.status(404).json({ message: "User or pilgrim not found" });
         }
 
         // Also remove the user from any groups they might be moderating or be a pilgrim in
@@ -227,7 +296,7 @@ exports.delete_user_permanently = async (req, res) => {
             { $set: { current_user_id: null, status: 'inactive' } } // Set band to inactive if user is deleted
         );
 
-        res.status(200).json({ message: `User with ID ${user_id} has been permanently deleted.` });
+        res.status(200).json({ message });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -245,6 +314,54 @@ exports.delete_group_by_id = async (req, res) => {
         }
         
         res.status(200).json({ message: `Group with ID ${group_id} has been permanently deleted.` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Assign bands to a group
+exports.assign_bands_to_group = async (req, res) => {
+    try {
+        const { group_id } = req.params;
+        const { band_ids } = req.body;
+
+        const group = await Group.findById(group_id);
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+
+        // Add the new band IDs to the group's available bands
+        const updated_group = await Group.findByIdAndUpdate(
+            group_id,
+            { $addToSet: { available_band_ids: { $each: band_ids } } },
+            { new: true }
+        );
+
+        res.json({ message: "Bands assigned to group successfully", group: updated_group });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Unassign bands from a group
+exports.unassign_bands_from_group = async (req, res) => {
+    try {
+        const { group_id } = req.params;
+        const { band_ids } = req.body;
+
+        const group = await Group.findById(group_id);
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+
+        // Remove the band IDs from the group's available bands
+        const updated_group = await Group.findByIdAndUpdate(
+            group_id,
+            { $pullAll: { available_band_ids: band_ids } },
+            { new: true }
+        );
+
+        res.json({ message: "Bands unassigned from group successfully", group: updated_group });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

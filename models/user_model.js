@@ -2,18 +2,14 @@ const mongoose = require('mongoose');
 
 const user_schema = new mongoose.Schema({
     full_name: { type: String, required: true },
-    email: { type: String, sparse: true }, // Sparse allows optional field
-    password: { type: String }, // Optional for pilgrim-only accounts
-    national_id: { type: String, unique: true, sparse: true }, // National/State ID for pilgrims
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
     role: { 
         type: String, 
-        enum: ['admin', 'moderator', 'pilgrim'], 
-        default: 'pilgrim' 
+        enum: ['admin', 'moderator'], 
+        default: 'moderator' 
     },
-    phone_number: { type: String, unique: true, sparse: true }, // Each user has unique phone number
-    age: { type: Number, min: 0 }, // Age of the user, optional
-    gender: { type: String, enum: ['male', 'female', 'other'] }, // Gender of the user, optional
-    medical_history: String, // Optional medical information for pilgrims
+    phone_number: { type: String, required: true, unique: true }, // Each user has unique phone number
     active: { type: Boolean, default: true }, // Track if account is active
     created_at: { type: Date, default: Date.now }
 });

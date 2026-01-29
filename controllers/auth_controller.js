@@ -1,4 +1,5 @@
 const User = require('../models/user_model');
+const Pilgrim = require('../models/pilgrim_model');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -7,8 +8,8 @@ exports.register_user = async (req, res) => {
     try {
         const { full_name, email, password, phone_number } = req.body;
 
-        // Check if email is already registered for a non-pilgrim user
-        const existing_user = await User.findOne({ email, role: { $ne: 'pilgrim' } });
+        // Check if email is already registered
+        const existing_user = await User.findOne({ email });
         if (existing_user) {
             return res.status(400).json({ message: "Email is already registered" });
         }
@@ -86,23 +87,23 @@ exports.update_profile = async (req, res) => {
 // Register a pilgrim (by moderator/admin) - no password required
 exports.register_pilgrim = async (req, res) => {
     try {
-        const { full_name, national_id, medical_history, email, age, gender } = req.body;
+        const { full_name, national_id, medical_history, email, age, gender, phone_number } = req.body;
 
         // Check if pilgrim already exists with this national ID
-        const existing = await User.findOne({ national_id });
+        const existing = await Pilgrim.findOne({ national_id });
         if (existing) {
             return res.status(400).json({ message: "Pilgrim with this ID already exists" });
         }
 
-        const pilgrim = await User.create({
+        const pilgrim = await Pilgrim.create({
             full_name,
             national_id,
             medical_history,
             email,
             age,
             gender,
-            role: 'pilgrim',
-            password: null // Pilgrims don't need passwords
+            phone_number,
+            created_by: req.user.id
         });
 
         res.status(201).json({ 
@@ -129,19 +130,22 @@ exports.search_pilgrims = async (req, res) => {
         const skip = (pageNum - 1) * limitNum;
 
         const searchQuery = {
-            role: 'pilgrim',
             $or: [
                 { national_id: { $regex: search, $options: 'i' } },
                 { full_name: { $regex: search, $options: 'i' } }
             ]
         };
 
-        const pilgrims = await User.find(searchQuery)
+        if (req.user.role === 'moderator') {
+            searchQuery.created_by = req.user.id;
+        }
+
+        const pilgrims = await Pilgrim.find(searchQuery)
             .select('_id full_name national_id email phone_number medical_history age gender')
             .skip(skip)
             .limit(limitNum);
 
-        const total = await User.countDocuments(searchQuery);
+        const total = await Pilgrim.countDocuments(searchQuery);
 
         res.json({ 
             success: true,
@@ -163,7 +167,12 @@ exports.get_pilgrim_by_id = async (req, res) => {
     try {
         const { pilgrim_id } = req.params;
 
-        const pilgrim = await User.findOne({ _id: pilgrim_id, role: 'pilgrim' })
+        const query = { _id: pilgrim_id };
+        if (req.user.role === 'moderator') {
+            query.created_by = req.user.id;
+        }
+
+        const pilgrim = await Pilgrim.findOne(query)
             .select('_id full_name national_id email phone_number medical_history age gender created_at');
 
         if (!pilgrim) {

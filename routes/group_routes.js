@@ -20,5 +20,6 @@ router.post('/:group_id/remove-pilgrim', authorize('moderator', 'admin'), valida
 router.get('/:group_id', authorize('moderator', 'admin'), group_controller.get_single_group);
 router.put('/:group_id', authorize('moderator', 'admin'), validate(require('../middleware/schemas').update_group_schema), group_controller.update_group_details);
 router.delete('/:group_id', authorize('moderator', 'admin'), group_controller.delete_group);
+router.get('/:group_id/available-bands', authorize('moderator', 'admin'), group_controller.get_available_bands_for_group);
 
 module.exports = router;

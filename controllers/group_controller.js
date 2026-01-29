@@ -1,5 +1,6 @@
 const Group = require('../models/group_model');
 const User = require('../models/user_model');
+const Pilgrim = require('../models/pilgrim_model');
 const HardwareBand = require('../models/hardware_band_model');
 
 // Get a single group by ID (moderator/admin only)
@@ -25,7 +26,7 @@ exports.get_single_group = async (req, res) => {
 
         // Enrich pilgrims with their details and band info
         const pilgrims_with_details = await Promise.all(group.pilgrim_ids.map(async (pilgrim_id) => {
-            const pilgrim = await User.findById(pilgrim_id)
+            const pilgrim = await Pilgrim.findById(pilgrim_id)
                 .select('full_name national_id email phone_number medical_history age gender')
                 .lean();
 
@@ -119,7 +120,7 @@ exports.get_my_groups = async (req, res) => {
             const pilgrims_with_locations = (await Promise.all(pilgrim_ids.map(async (pilgrim_id) => {
                 if (!pilgrim_id) return null;
 
-                const pilgrim = await User.findById(pilgrim_id).select('full_name email phone_number national_id medical_history age gender');
+                const pilgrim = await Pilgrim.findById(pilgrim_id).select('full_name email phone_number national_id medical_history age gender');
                 
                 if (!pilgrim) return null; 
 
@@ -164,21 +165,29 @@ exports.get_my_groups = async (req, res) => {
 // 3. Band Reassignment: Link a physical band to a pilgrim
 exports.assign_band_to_pilgrim = async (req, res) => {
     try {
-        const { serial_number, user_id } = req.body;
+        const { serial_number, user_id, group_id } = req.body; // group_id is required
 
-        // Validate the pilgrim exists and is a pilgrim
-        const user = await User.findById(user_id);
-        if (!user) {
+        // Validate the pilgrim exists
+        const pilgrim = await Pilgrim.findById(user_id);
+        if (!pilgrim) {
             return res.status(404).json({ message: "Pilgrim not found" });
         }
-        if (user.role !== 'pilgrim') {
-            return res.status(400).json({ message: "User must be a pilgrim" });
+
+        // Validate the group exists
+        const group = await Group.findById(group_id);
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
         }
 
         // Validate the band exists
         const band = await HardwareBand.findOne({ serial_number });
         if (!band) {
             return res.status(404).json({ message: "Band not found" });
+        }
+
+        // Check if the band is available for this group
+        if (!group.available_band_ids.includes(band._id)) {
+            return res.status(400).json({ message: "Band is not available for this group" });
         }
 
         // Unassign from any previous user (if any)
@@ -194,6 +203,9 @@ exports.assign_band_to_pilgrim = async (req, res) => {
             { new: true }
         );
 
+        // Remove the band from the group's available bands
+        await Group.findByIdAndUpdate(group_id, { $pull: { available_band_ids: band._id } });
+
         const updated_band = updated_band_doc.toObject();
         delete updated_band.__v;
 
@@ -207,15 +219,18 @@ exports.assign_band_to_pilgrim = async (req, res) => {
 // Unassign band from pilgrim (moderator/admin only)
 exports.unassign_band_from_pilgrim = async (req, res) => {
     try {
-        const { user_id } = req.body;
+        const { user_id, group_id } = req.body; // group_id is required
 
-        // Validate the pilgrim exists and is a pilgrim
-        const user = await User.findById(user_id);
-        if (!user) {
+        // Validate the pilgrim exists
+        const pilgrim = await Pilgrim.findById(user_id);
+        if (!pilgrim) {
             return res.status(404).json({ message: "Pilgrim not found" });
         }
-        if (user.role !== 'pilgrim') {
-            return res.status(400).json({ message: "User must be a pilgrim" });
+
+        // Validate the group exists
+        const group = await Group.findById(group_id);
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
         }
 
         // Find the band assigned to this pilgrim
@@ -231,6 +246,9 @@ exports.unassign_band_from_pilgrim = async (req, res) => {
             { new: true }
         );
 
+        // Add the band back to the group's available bands
+        await Group.findByIdAndUpdate(group_id, { $addToSet: { available_band_ids: assigned_band._id } });
+
         const updated_band = updated_band_doc.toObject();
         delete updated_band.__v;
         // The docs example shows battery_percent, last_latitude, etc. as null.
@@ -240,6 +258,22 @@ exports.unassign_band_from_pilgrim = async (req, res) => {
 
         res.json({ message: "Band successfully unassigned from pilgrim", band: updated_band });
 
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Get available bands for a group
+exports.get_available_bands_for_group = async (req, res) => {
+    try {
+        const { group_id } = req.params;
+
+        const group = await Group.findById(group_id).populate('available_band_ids');
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+
+        res.json({ success: true, data: group.available_band_ids });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -273,13 +307,10 @@ exports.send_individual_alert = async (req, res) => {
     try {
         const { user_id, message_text } = req.body;
 
-        // Validate pilgrim exists and is a pilgrim
-        const user = await User.findById(user_id);
-        if (!user) {
+        // Validate pilgrim exists
+        const pilgrim = await Pilgrim.findById(user_id);
+        if (!pilgrim) {
             return res.status(404).json({ message: "Pilgrim not found" });
-        }
-        if (user.role !== 'pilgrim') {
-            return res.status(400).json({ message: "User must be a pilgrim" });
         }
 
         // Get the band assigned to this pilgrim
@@ -291,7 +322,7 @@ exports.send_individual_alert = async (req, res) => {
         // Logic for sending alert to specific wristband
         res.json({ 
             status: "queued", 
-            message: `Alert "${message_text}" sent to pilgrim ${user.full_name}`,
+            message: `Alert "${message_text}" sent to pilgrim ${pilgrim.full_name}`,
             band_serial: band.serial_number
         });
     } catch (error) {
@@ -309,9 +340,9 @@ exports.add_pilgrim_to_group = async (req, res) => {
             return res.status(400).json({ message: "You cannot add yourself as a pilgrim to the group" });
         }
 
-        const user = await User.findById(user_id);
-        if (!user || user.role !== 'pilgrim') {
-            return res.status(400).json({ message: "User must be a pilgrim" });
+        const pilgrim = await Pilgrim.findById(user_id);
+        if (!pilgrim) {
+            return res.status(400).json({ message: "Pilgrim not found" });
         }
 
         const updated_group = await Group.findByIdAndUpdate(

@@ -145,19 +145,20 @@ All paginated responses include:
 ### 5. Register Pilgrim (Admin/Moderator)
 - **POST** `/auth/register-pilgrim`
 - **Auth:** Moderator or Admin only
-- **Description:** Quickly register pilgrims without needing a password. The email field is optional and allows duplicates. Used by moderators to onboard pilgrims.
+- **Description:** Quickly register pilgrims. The email field is optional. Used by moderators to onboard pilgrims.
 - **Body:**
   ```json
   {
     "full_name": "Ahmed Hassan",
     "national_id": "123456789",
+    "phone_number": "+201234567891",
     "medical_history": "Diabetic, takes insulin daily",
     "email": "ahmed@example.com",
     "age": 30,
     "gender": "male"
   }
   ```
-- **Note:** `email`, `age`, and `gender` fields are optional.
+- **Note:** `email`, `age`, `gender`, and `phone_number` fields are optional.
 - **Response (201):**
   ```json
   {
@@ -166,13 +167,13 @@ All paginated responses include:
     "national_id": "123456789"
   }
   ```
-- **Note:** Pilgrims don't require a password and cannot login to the app. They are identified by their national ID and wristband assignment.
+- **Note:** Pilgrims are a separate entity and cannot login to the app. They are identified by their national ID and wristband assignment.
 
 ### 6. Search Pilgrims (Admin/Moderator)
 - **GET** `/auth/search-pilgrims?search=<search_term>&page=1&limit=20`
 - **Auth:** Moderator or Admin only
 - **Rate Limit:** 30 requests per minute
-- **Description:** Search for pilgrims by national ID or full name (paginated).
+- **Description:** Search for pilgrims by national ID or full name (paginated). Moderators can only search for pilgrims they have created. Admins can search for any pilgrim.
 - **Query Parameters:**
   - `search` (required): Search term (national ID or name, case-insensitive)
   - `page` (optional): Page number, default = 1
@@ -223,7 +224,7 @@ All paginated responses include:
 ### 6.5. Get Pilgrim by ID
 - **GET** `/auth/pilgrims/:pilgrim_id`
 - **Auth:** Moderator or Admin only
-- **Description:** Retrieve details of a single pilgrim by their ID.
+- **Description:** Retrieve details of a single pilgrim by their ID. Moderators can only retrieve details of pilgrims they have created. Admins can retrieve any pilgrim.
 - **Params:** `pilgrim_id` (MongoDB ID)
 - **Response (200):**
   ```json
@@ -454,12 +455,13 @@ All paginated responses include:
 ### 11. Assign Band to Pilgrim
 - **POST** `/groups/assign-band`
 - **Auth:** Moderator or Admin
-- **Description:** Assign a hardware band to a pilgrim. Validates both pilgrim and band exist.
+- **Description:** Assign a hardware band to a pilgrim. The band must be available in the group's pool. After assignment, the band will be removed from the available pool.
 - **Body:**
   ```json
   {
     "serial_number": "BAND-001",
-    "user_id": "60d5ec49c1234567890abce0"
+    "user_id": "60d5ec49c1234567890abce0",
+    "group_id": "60d5f1a9c1234567890abcdf"
   }
   ```
 - **Response (200):**
@@ -479,17 +481,18 @@ All paginated responses include:
   }
   ```
 - **Errors:**
-  - 404: Pilgrim or band not found
-  - 400: User is not a pilgrim
+  - 404: Pilgrim, group or band not found
+  - 400: Band is not available for this group
 
 ### 11.5. Unassign Band from Pilgrim
 - **POST** `/groups/unassign-band`
 - **Auth:** Moderator or Admin
-- **Description:** Unassigns a hardware band from a pilgrim. The band's `current_user_id` will be set to `null`.
+- **Description:** Unassigns a hardware band from a pilgrim. The band will be returned to the group's available pool.
 - **Body:**
   ```json
   {
-    "user_id": "60d5ec49c1234567890abce0"
+    "user_id": "60d5ec49c1234567890abce0",
+    "group_id": "60d5f1a9c1234567890abcdf"
   }
   ```
 - **Response (200):**
@@ -508,9 +511,6 @@ All paginated responses include:
     }
   }
   ```
-- **Errors:**
-  - 404: Pilgrim not found or no band assigned
-  - 400: User is not a pilgrim or band already unassigned
 
 ### 12. Send Group Alert
 - **POST** `/groups/send-alert`
@@ -569,6 +569,26 @@ All paginated responses include:
   }
   ```
 - **Error (403):** If you're not a moderator of the group
+
+### 12.6 Get Available Bands for Group
+- **GET** `/groups/:group_id/available-bands`
+- **Auth:** Moderator or Admin
+- **Params:** `group_id` (MongoDB ID)
+- **Description:** Get the list of available bands for a specific group.
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "_id": "60d5ec49c1234567890abce1",
+        "serial_number": "BAND-001",
+        "imei": "358938070000000",
+        "status": "active"
+      }
+    ]
+  }
+  ```
 
 ---
 
@@ -753,7 +773,7 @@ All paginated responses include:
 - **GET** `/admin/users?page=1&limit=50&role=moderator`
 - **Auth:** Admin only
 - **Rate Limit:** 100 requests per 15 minutes
-- **Description:** List all users in the system with optional role filtering (paginated).
+- **Description:** List all users (admins/moderators) or pilgrims in the system with optional role filtering (paginated). If no role is provided, it returns users.
 - **Query Parameters:**
   - `page` (optional): Page number, default = 1
   - `limit` (optional): Items per page, default = 50, max = 100
@@ -842,6 +862,56 @@ All paginated responses include:
   }
   ```
 
+### 19.6 Assign Bands to Group
+- **POST** `/admin/groups/:group_id/assign-bands`
+- **Auth:** Admin only
+- **Params:** `group_id` (MongoDB ID)
+- **Description:** Assign a list of bands to a group, making them available for assignment to pilgrims within that group.
+- **Body:**
+  ```json
+  {
+    "band_ids": ["60d5ec49c1234567890abce1", "60d5ec49c1234567890abce2"]
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "message": "Bands assigned to group successfully",
+    "group": {
+      "_id": "60d5f1a9c1234567890abcdf",
+      "group_name": "Hajj Group A",
+      "moderator_ids": ["60d5ec49c1234567890abcde"],
+      "pilgrim_ids": ["60d5ec49c1234567890abcf0"],
+      "available_band_ids": ["60d5ec49c1234567890abce1", "60d5ec49c1234567890abce2"]
+    }
+  }
+  ```
+
+### 19.7 Unassign Bands from Group
+- **POST** `/admin/groups/:group_id/unassign-bands`
+- **Auth:** Admin only
+- **Params:** `group_id` (MongoDB ID)
+- **Description:** Unassign a list of bands from a group.
+- **Body:**
+  ```json
+  {
+    "band_ids": ["60d5ec49c1234567890abce1"]
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "message": "Bands unassigned from group successfully",
+    "group": {
+      "_id": "60d5f1a9c1234567890abcdf",
+      "group_name": "Hajj Group A",
+      "moderator_ids": ["60d5ec49c1234567890abcde"],
+      "pilgrim_ids": ["60d5ec49c1234567890abcf0"],
+      "available_band_ids": ["60d5ec49c1234567890abce2"]
+    }
+  }
+  ```
+
 ### 20. Get System Statistics
 - **GET** `/admin/stats`
 - **Auth:** Admin only
@@ -859,16 +929,19 @@ All paginated responses include:
       "active_users": 145,
       "inactive_users": 5,
       "total_groups": 12,
+      "avg_pilgrims_per_group": 10.25,
       "total_bands": 120,
       "active_bands": 115,
       "maintenance_bands": 3,
-      "inactive_bands": 2
+      "inactive_bands": 2,
+      "assigned_bands": 115,
+      "unassigned_bands": 5
     }
   }
   ```
 
-### 21. Promote User to Admin
-- **POST** `/admin/users/promote`
+### 21. Promote to Admin
+- **POST** `/admin/users/promote-to-admin`
 - **Auth:** Admin only
 - **Rate Limit:** 100 requests per 15 minutes
 - **Description:** Elevate a moderator to admin role.
@@ -891,11 +964,11 @@ All paginated responses include:
   }
   ```
 
-### 22. Demote User from Admin
-- **POST** `/admin/users/demote`
+### 22. Demote to Moderator
+- **POST** `/admin/users/demote-to-moderator`
 - **Auth:** Admin only
 - **Rate Limit:** 100 requests per 15 minutes
-- **Description:** Remove admin privileges and revert to moderator (removes from group moderator lists).
+- **Description:** Remove admin privileges and revert to moderator.
 - **Body:**
   ```json
   {
@@ -915,11 +988,31 @@ All paginated responses include:
   }
   ```
 
+### 22.5 Demote to Pilgrim
+- **POST** `/admin/users/demote-to-pilgrim`
+- **Auth:** Admin only
+- **Rate Limit:** 100 requests per 15 minutes
+- **Description:** Demote a moderator to a pilgrim. This will create a new pilgrim and delete the user.
+- **Body:**
+  ```json
+  {
+    "user_id": "60d5ec49c1234567890abcde"
+  }
+  ```
+- **Response (200):**
+  ```json
+  {
+    "success": true,
+    "message": "User demoted to pilgrim",
+    "pilgrim_id": "60d5ec49c1234567890abcf0"
+  }
+  ```
+
 ### 23. Deactivate User
 - **POST** `/admin/users/deactivate`
 - **Auth:** Admin only
 - **Rate Limit:** 100 requests per 15 minutes
-- **Description:** Deactivate a user account (prevents login).
+- **Description:** Deactivate a user or pilgrim account (prevents login for users).
 - **Body:**
   ```json
   {
@@ -942,7 +1035,7 @@ All paginated responses include:
 - **POST** `/admin/users/activate`
 - **Auth:** Admin only
 - **Rate Limit:** 100 requests per 15 minutes
-- **Description:** Reactivate a deactivated user account.
+- **Description:** Reactivate a deactivated user or pilgrim account.
 - **Body:**
   ```json
   {
@@ -965,7 +1058,7 @@ All paginated responses include:
 - **DELETE** `/admin/users/:user_id/force`
 - **Auth:** Admin only
 - **Params:** `user_id` (MongoDB ID)
-- **Description:** Permanently deletes a user from the database. This action also removes the user from any groups and unassigns any bands. This action cannot be undone.
+- **Description:** Permanently deletes a user or pilgrim from the database. This action also removes the user from any groups and unassigns any bands. This action cannot be undone.
 - **Response (200):**
   ```json
   {
@@ -1021,9 +1114,9 @@ All error responses follow this format:
 
 ## User Roles
 
-- **admin**: Full access to all endpoints (manage users, bands, groups)
-- **moderator**: Can manage groups, search & register pilgrims, assign bands, send alerts
-- **pilgrim**: Cannot login. Identified by national_id and wristband assignment. Used for tracking.
+- **admin**: Full access to all endpoints (manage users, bands, groups).
+- **moderator**: Can manage groups, search & register pilgrims, assign bands, send alerts.
+- **pilgrim**: A separate entity representing a pilgrim. Cannot login. Identified by national_id and wristband assignment. Used for tracking.
 
 ---
 

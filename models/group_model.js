@@ -3,8 +3,9 @@ const mongoose = require('mongoose');
 const group_schema = new mongoose.Schema({
     group_name: { type: String, required: true },
     moderator_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // Multiple moderators allowed
-    pilgrim_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    pilgrim_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Pilgrim' }],
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    available_band_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'HardwareBand' }]
 });
 
 module.exports = mongoose.model('Group', group_schema);
