@@ -197,6 +197,14 @@ exports.assign_band_to_pilgrim = async (req, res) => {
             { current_user_id: user_id },
             { $set: { current_user_id: null } }
         );
+
+        // Enforce that the band is available for this group (admin should assign bands to group first)
+        if (Array.isArray(group.available_band_ids) && group.available_band_ids.length > 0) {
+            const isAvailable = group.available_band_ids.some(id => id.toString() === band._id.toString());
+            if (!isAvailable) {
+                return res.status(400).json({ message: "Band is not available for this group" });
+            }
+        }
         // If a band was previously assigned to this user, we should add it back to the group's available bands
         // Only if we intend to manage group.available_band_ids. Given the change to get_available_bands_for_group,
         // we might deprecate group.available_band_ids entirely.
@@ -212,6 +220,8 @@ exports.assign_band_to_pilgrim = async (req, res) => {
         const updated_band = updated_band_doc.toObject();
         delete updated_band.__v;
 
+        // Remove this band from the group's available list (if present)
+        await Group.findByIdAndUpdate(group_id, { $pull: { available_band_ids: updated_band._id } }).catch(() => {});
 
         res.json({ message: "Band successfully assigned to pilgrim", band: updated_band });
     } catch (error) {
@@ -258,6 +268,9 @@ exports.unassign_band_from_pilgrim = async (req, res) => {
         // We will explicitly set them to null in the response for consistency with example if they are not already there.
         updated_band.current_user_id = null; // Ensure null in response
 
+        // Add this band back to the group's available list (if group exists)
+        await Group.findByIdAndUpdate(group_id, { $addToSet: { available_band_ids: updated_band._id } }).catch(() => {});
+
         res.json({ message: "Band successfully unassigned from pilgrim", band: updated_band });
 
     } catch (error) {
@@ -268,12 +281,14 @@ exports.unassign_band_from_pilgrim = async (req, res) => {
 // Get available bands for a group
 exports.get_available_bands_for_group = async (req, res) => {
     try {
-        // No need for group_id from params, as we are looking for all unassigned bands globally.
-        // If a business rule dictates that bands are pre-assigned to a group's "pool"
-        // before they can be assigned to a pilgrim within that group, that logic would go here.
-        // For now, we assume any unassigned band is available.
+        const { group_id } = req.params;
+        // If the group exists and has an available_band_ids list, return those bands that are currently unassigned
+        const group = await Group.findById(group_id).lean();
+        if (!group) return res.status(404).json({ message: 'Group not found' });
 
-        const available_bands = await HardwareBand.find({ current_user_id: null });
+        const bandIds = Array.isArray(group.available_band_ids) ? group.available_band_ids : [];
+
+        const available_bands = await HardwareBand.find({ _id: { $in: bandIds }, current_user_id: null }).lean();
 
         res.json({ success: true, data: available_bands });
     } catch (error) {

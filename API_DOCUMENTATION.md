@@ -473,6 +473,7 @@ All paginated responses include:
     "group_id": "60d5f1a9c1234567890abcdf"
   }
   ```
+ - **Note:** The band must be assigned to the group's available pool first by an admin using `/admin/groups/:group_id/assign-bands`. Assigning a band that is not in the group's available list will return HTTP 400.
 - **Response (200):**
   ```json
   {
@@ -655,6 +656,7 @@ All paginated responses include:
     }
   }
   ```
+   - **Behavior change:** The implementation now returns the subset of bands that were previously assigned to the group's `available_band_ids` by an admin and are currently unassigned (i.e., available to be assigned to pilgrims within that group). If the group does not exist, the endpoint returns HTTP 404.
 
 ### 15. Get All Bands (Moderator/Admin)
 - **GET** `/hardware/bands?page=1&limit=50&status=active`
@@ -874,6 +876,8 @@ All paginated responses include:
     "message": "Group not found"
   }
   ```
+
+   - **Validation:** The server validates that all provided `band_ids` exist. If any IDs are missing, the response will be HTTP 404 with a `missing` array listing the non-existent IDs.
 
 ### 19.6 Assign Bands to Group
 - **POST** `/admin/groups/:group_id/assign-bands`

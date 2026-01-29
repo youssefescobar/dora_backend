@@ -340,6 +340,14 @@ exports.assign_bands_to_group = async (req, res) => {
             return res.status(404).json({ message: "Group not found" });
         }
 
+        // Validate that provided band IDs exist
+        const bands = await HardwareBand.find({ _id: { $in: band_ids } }).select('_id').lean();
+        if (bands.length !== band_ids.length) {
+            const existingIds = bands.map(b => b._id.toString());
+            const missing = band_ids.filter(id => !existingIds.includes(id.toString()));
+            return res.status(404).json({ message: 'Some bands not found', missing });
+        }
+
         // Add the new band IDs to the group's available bands
         const updated_group = await Group.findByIdAndUpdate(
             group_id,
