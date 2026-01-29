@@ -1,9 +1,18 @@
-# Doora SmartBand API Documentation
+# Durra SmartBand API Documentation
 
 ## Base URL
 ```
 http://localhost:5000/api
 ```
+
+## Implementation updates (applied)
+
+- Applied `search` rate limiter to `GET /auth/search-pilgrims` (30 requests/min).
+- Applied general protected-endpoints limiter (100 requests / 15 minutes) to group, admin, and protected hardware routes.
+- Made `phone_number` required on user registration to match the `User` model.
+- Added optional `battery_percent` to the `/hardware/ping` and `/hardware/register` request schemas.
+- Fixed group delete permission check (now correctly verifies moderator membership).
+
 
 ## Authentication
 All protected routes require a JWT token in the `Authorization` header:

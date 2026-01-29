@@ -4,7 +4,7 @@ const auth_ctrl = require('../controllers/auth_controller');
 const { protect, authorize } = require('../middleware/auth_middleware');
 const validate = require('../middleware/validation_middleware');
 const { register_schema, login_schema, update_profile_schema } = require('../middleware/schemas');
-const { authLimiter } = require('../middleware/rate_limit');
+const { authLimiter, searchLimiter } = require('../middleware/rate_limit');
 
 // Public routes with rate limiting
 router.post('/register', authLimiter, validate(register_schema), auth_ctrl.register_user);
@@ -17,7 +17,7 @@ router.put('/update-profile', validate(update_profile_schema), auth_ctrl.update_
 
 // Moderator/Admin routes
 router.post('/register-pilgrim', authorize('moderator', 'admin'), validate(require('../middleware/schemas').register_pilgrim_schema), auth_ctrl.register_pilgrim);
-router.get('/search-pilgrims', authorize('moderator', 'admin'), auth_ctrl.search_pilgrims);
+router.get('/search-pilgrims', authorize('moderator', 'admin'), searchLimiter, auth_ctrl.search_pilgrims);
 router.get('/pilgrims/:pilgrim_id', authorize('moderator', 'admin'), auth_ctrl.get_pilgrim_by_id);
 
 module.exports = router;

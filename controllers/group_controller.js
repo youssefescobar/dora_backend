@@ -405,7 +405,8 @@ exports.delete_group = async (req, res) => {
         const group = await Group.findById(group_id);
         if (!group) return res.status(404).json({ message: "Group not found" });
 
-        if (!group.moderator_ids.includes(req.user.id)) {
+        const is_group_moderator = group.moderator_ids.some(mod => mod.toString() === req.user.id);
+        if (!is_group_moderator) {
             return res.status(403).json({ message: "Only group moderators can delete the group" });
         }
 

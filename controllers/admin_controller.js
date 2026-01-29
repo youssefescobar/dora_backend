@@ -155,7 +155,10 @@ exports.promote_to_admin = async (req, res) => {
         user.role = 'admin';
         await user.save();
 
-        res.json({ message: `User promoted to admin`, user });
+        const safeUser = user.toObject ? user.toObject() : user;
+        if (safeUser.password) delete safeUser.password;
+
+        res.json({ message: `User promoted to admin`, user: safeUser });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -176,7 +179,10 @@ exports.demote_to_moderator = async (req, res) => {
         user.role = 'moderator';
         await user.save();
 
-        res.json({ message: "User demoted to moderator", user });
+        const safeUser = user.toObject ? user.toObject() : user;
+        if (safeUser.password) delete safeUser.password;
+
+        res.json({ message: "User demoted to moderator", user: safeUser });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -226,7 +232,9 @@ exports.deactivate_user = async (req, res) => {
         if (user) {
             user.active = false;
             await user.save();
-            return res.json({ message: "User deactivated", user });
+            const safeUser = user.toObject ? user.toObject() : user;
+            if (safeUser.password) delete safeUser.password;
+            return res.json({ message: "User deactivated", user: safeUser });
         }
 
         let pilgrim = await Pilgrim.findById(user_id);
@@ -251,7 +259,9 @@ exports.activate_user = async (req, res) => {
         if (user) {
             user.active = true;
             await user.save();
-            return res.json({ message: "User activated", user });
+            const safeUser = user.toObject ? user.toObject() : user;
+            if (safeUser.password) delete safeUser.password;
+            return res.json({ message: "User activated", user: safeUser });
         }
 
         let pilgrim = await Pilgrim.findById(user_id);

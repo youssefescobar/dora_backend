@@ -5,7 +5,7 @@ exports.register_schema = Joi.object({
     full_name: Joi.string().required().min(3).max(100),
     email: Joi.string().email().required(),
     password: Joi.string().required().min(6),
-    phone_number: Joi.string().optional()
+    phone_number: Joi.string().required()
 });
 
 exports.login_schema = Joi.object({
@@ -43,7 +43,8 @@ exports.add_pilgrim_schema = Joi.object({
 // Hardware validations
 exports.register_band_schema = Joi.object({
     serial_number: Joi.string().required(),
-    imei: Joi.string().optional()
+    imei: Joi.string().optional(),
+    battery_percent: Joi.number().optional().min(0).max(100)
 });
 
 exports.assign_band_schema = Joi.object({
@@ -60,7 +61,8 @@ exports.unassign_band_schema = Joi.object({
 exports.report_location_schema = Joi.object({
     serial_number: Joi.string().required(),
     lat: Joi.number().required(),
-    lng: Joi.number().required()
+    lng: Joi.number().required(),
+    battery_percent: Joi.number().optional().min(0).max(100)
 });
 
 exports.send_alert_schema = Joi.object({

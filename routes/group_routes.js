@@ -2,11 +2,14 @@ const express = require('express');
 const router = express.Router();
 const group_controller = require('../controllers/group_controller');
 const { protect, authorize } = require('../middleware/auth_middleware');
+const { generalLimiter } = require('../middleware/rate_limit');
 const validate = require('../middleware/validation_middleware');
 const { create_group_schema, add_pilgrim_schema, send_alert_schema, assign_band_schema, unassign_band_schema } = require('../middleware/schemas');
 
 // All routes here require login
 router.use(protect);
+// Apply general rate limiter for protected group endpoints
+router.use(generalLimiter);
 
 // Only moderators can manage groups
 router.post('/create', authorize('moderator', 'admin'), validate(create_group_schema), group_controller.create_group);

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const hard_ctrl = require('../controllers/hardware_controller');
 const { protect, authorize } = require('../middleware/auth_middleware');
+const { generalLimiter } = require('../middleware/rate_limit');
 const validate = require('../middleware/validation_middleware');
 const { report_location_schema, register_band_schema } = require('../middleware/schemas');
 const { hardwareLimiter } = require('../middleware/rate_limit');
@@ -11,6 +12,8 @@ router.post('/ping', hardwareLimiter, validate(report_location_schema), hard_ctr
 
 // Protected endpoints
 router.use(protect);
+// Apply general rate limiter for protected hardware endpoints
+router.use(generalLimiter);
 
 // Admin only
 router.post('/register', authorize('admin'), validate(register_band_schema), hard_ctrl.register_band);

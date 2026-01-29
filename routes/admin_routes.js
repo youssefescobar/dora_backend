@@ -2,10 +2,13 @@ const express = require('express');
 const router = express.Router();
 const admin_ctrl = require('../controllers/admin_controller');
 const { protect, authorize } = require('../middleware/auth_middleware');
+const { generalLimiter } = require('../middleware/rate_limit');
 const validate = require('../middleware/validation_middleware');
 
 // All admin routes require authentication and admin role
 router.use(protect);
+// Apply general rate limiter for protected admin endpoints
+router.use(generalLimiter);
 router.use(authorize('admin'));
 
 // User management
