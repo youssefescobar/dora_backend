@@ -455,7 +455,7 @@ All paginated responses include:
 ### 11. Assign Band to Pilgrim
 - **POST** `/groups/assign-band`
 - **Auth:** Moderator or Admin
-- **Description:** Assign a hardware band to a pilgrim. The band must be available in the group's pool. After assignment, the band will be removed from the available pool.
+- **Description:** Assign a hardware band to a pilgrim. The band must be globally unassigned (i.e., its `current_user_id` must be null).
 - **Body:**
   ```json
   {
@@ -482,12 +482,12 @@ All paginated responses include:
   ```
 - **Errors:**
   - 404: Pilgrim, group or band not found
-  - 400: Band is not available for this group
+  - 400: Band is already assigned to another pilgrim
 
 ### 11.5. Unassign Band from Pilgrim
 - **POST** `/groups/unassign-band`
 - **Auth:** Moderator or Admin
-- **Description:** Unassigns a hardware band from a pilgrim. The band will be returned to the group's available pool.
+- **Description:** Unassigns a hardware band from a pilgrim. The band becomes globally unassigned (its `current_user_id` is set to null).
 - **Body:**
   ```json
   {
@@ -573,8 +573,8 @@ All paginated responses include:
 ### 12.6 Get Available Bands for Group
 - **GET** `/groups/:group_id/available-bands`
 - **Auth:** Moderator or Admin
-- **Params:** `group_id` (MongoDB ID)
-- **Description:** Get the list of available bands for a specific group.
+- **Params:** `group_id` (MongoDB ID) - *Note: This parameter is currently ignored by the backend. The endpoint returns all globally unassigned bands regardless of the `group_id` provided.*
+- **Description:** Get a list of all hardware bands that are currently globally unassigned (i.e., not assigned to any pilgrim).
 - **Response (200):**
   ```json
   {
@@ -584,7 +584,11 @@ All paginated responses include:
         "_id": "60d5ec49c1234567890abce1",
         "serial_number": "BAND-001",
         "imei": "358938070000000",
-        "status": "active"
+        "status": "active",
+        "current_user_id": null,
+        "last_latitude": null,
+        "last_longitude": null,
+        "last_updated": null
       }
     ]
   }

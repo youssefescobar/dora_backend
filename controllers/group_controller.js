@@ -179,22 +179,28 @@ exports.assign_band_to_pilgrim = async (req, res) => {
             return res.status(404).json({ message: "Group not found" });
         }
 
-        // Validate the band exists
+        // Validate the band exists and is not currently assigned
         const band = await HardwareBand.findOne({ serial_number });
         if (!band) {
             return res.status(404).json({ message: "Band not found" });
         }
-
-        // Check if the band is available for this group
-        if (!group.available_band_ids.includes(band._id)) {
-            return res.status(400).json({ message: "Band is not available for this group" });
+        if (band.current_user_id) {
+            return res.status(400).json({ message: "Band is already assigned to another pilgrim" });
         }
 
-        // Unassign from any previous user (if any)
-        await HardwareBand.updateOne(
+        // Unassign from any previous user (if any) - This covers cases where a pilgrim might have multiple bands assigned (though ideal would be one-to-one)
+        // Or if the same band was previously assigned to this user and for some reason current_user_id was not cleared.
+        // This line is potentially problematic if current_user_id is not unique (e.g. one pilgrim can have many bands).
+        // If a pilgrim can only have one band, then this is correct. If they can have many, this logic needs adjustment.
+        // Assuming one pilgrim, one band for now.
+        const previously_assigned_band = await HardwareBand.findOneAndUpdate(
             { current_user_id: user_id },
             { $set: { current_user_id: null } }
         );
+        // If a band was previously assigned to this user, we should add it back to the group's available bands
+        // Only if we intend to manage group.available_band_ids. Given the change to get_available_bands_for_group,
+        // we might deprecate group.available_band_ids entirely.
+        // For now, removing the logic related to group.available_band_ids.
 
         // Assign to the new user
         const updated_band_doc = await HardwareBand.findOneAndUpdate(
@@ -202,9 +208,6 @@ exports.assign_band_to_pilgrim = async (req, res) => {
             { $set: { current_user_id: user_id, status: 'active' } },
             { new: true }
         );
-
-        // Remove the band from the group's available bands
-        await Group.findByIdAndUpdate(group_id, { $pull: { available_band_ids: band._id } });
 
         const updated_band = updated_band_doc.toObject();
         delete updated_band.__v;
@@ -246,8 +249,7 @@ exports.unassign_band_from_pilgrim = async (req, res) => {
             { new: true }
         );
 
-        // Add the band back to the group's available bands
-        await Group.findByIdAndUpdate(group_id, { $addToSet: { available_band_ids: assigned_band._id } });
+
 
         const updated_band = updated_band_doc.toObject();
         delete updated_band.__v;
@@ -266,15 +268,16 @@ exports.unassign_band_from_pilgrim = async (req, res) => {
 // Get available bands for a group
 exports.get_available_bands_for_group = async (req, res) => {
     try {
-        const { group_id } = req.params;
+        // No need for group_id from params, as we are looking for all unassigned bands globally.
+        // If a business rule dictates that bands are pre-assigned to a group's "pool"
+        // before they can be assigned to a pilgrim within that group, that logic would go here.
+        // For now, we assume any unassigned band is available.
 
-        const group = await Group.findById(group_id).populate('available_band_ids');
-        if (!group) {
-            return res.status(404).json({ message: "Group not found" });
-        }
+        const available_bands = await HardwareBand.find({ current_user_id: null });
 
-        res.json({ success: true, data: group.available_band_ids });
+        res.json({ success: true, data: available_bands });
     } catch (error) {
+        console.error("Error in get_available_bands_for_group:", error);
         res.status(500).json({ error: error.message });
     }
 };

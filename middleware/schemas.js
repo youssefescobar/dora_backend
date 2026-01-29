@@ -48,7 +48,13 @@ exports.register_band_schema = Joi.object({
 
 exports.assign_band_schema = Joi.object({
     serial_number: Joi.string().required(),
-    user_id: Joi.string().required()
+    user_id: Joi.string().required(),
+    group_id: Joi.string().required()
+});
+
+exports.unassign_band_schema = Joi.object({
+    user_id: Joi.string().required(),
+    group_id: Joi.string().required()
 });
 
 exports.report_location_schema = Joi.object({
