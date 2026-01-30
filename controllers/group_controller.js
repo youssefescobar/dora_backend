@@ -10,6 +10,7 @@ exports.get_single_group = async (req, res) => {
 
         const group = await Group.findById(group_id)
             .populate('moderator_ids', 'full_name email')
+            .populate('available_band_ids', 'serial_number imei status')
             .lean(); // Use lean for easier object manipulation
 
         if (!group) {
@@ -44,7 +45,7 @@ exports.get_single_group = async (req, res) => {
                 } : null
             };
         }));
-        
+
         group.pilgrims = pilgrims_with_details.filter(Boolean); // Add enriched pilgrims to group object
         delete group.pilgrim_ids; // Remove raw pilgrim_ids array
 
@@ -64,13 +65,13 @@ exports.get_single_group = async (req, res) => {
 exports.create_group = async (req, res) => {
     try {
         const { group_name } = req.body;
-        
+
         // Check if this moderator already has a group with the same name
         const existing = await Group.findOne({
             group_name,
             moderator_ids: req.user.id
         });
-        
+
         if (existing) {
             return res.status(400).json({ message: "You already have a group with this name" });
         }
@@ -80,7 +81,7 @@ exports.create_group = async (req, res) => {
             moderator_ids: [req.user.id], // The creator is the first moderator
             created_by: req.user.id
         });
-        
+
         const group_obj = new_group.toObject();
         delete group_obj.__v;
 
@@ -121,11 +122,11 @@ exports.get_my_groups = async (req, res) => {
                 if (!pilgrim_id) return null;
 
                 const pilgrim = await Pilgrim.findById(pilgrim_id).select('full_name email phone_number national_id medical_history age gender');
-                
-                if (!pilgrim) return null; 
+
+                if (!pilgrim) return null;
 
                 const band = await HardwareBand.findOne({ current_user_id: pilgrim_id });
-                
+
                 const pilgrimObj = pilgrim.toObject ? pilgrim.toObject() : pilgrim;
 
                 return {
@@ -138,7 +139,7 @@ exports.get_my_groups = async (req, res) => {
                     } : null
                 };
             }))).filter(Boolean); // Remove nulls
-            
+
             // Rename pilgrim_ids to pilgrims to match docs
             delete groupObj.pilgrim_ids;
             groupObj.pilgrims = pilgrims_with_locations;
@@ -221,7 +222,7 @@ exports.assign_band_to_pilgrim = async (req, res) => {
         delete updated_band.__v;
 
         // Remove this band from the group's available list (if present)
-        await Group.findByIdAndUpdate(group_id, { $pull: { available_band_ids: updated_band._id } }).catch(() => {});
+        await Group.findByIdAndUpdate(group_id, { $pull: { available_band_ids: updated_band._id } }).catch(() => { });
 
         res.json({ message: "Band successfully assigned to pilgrim", band: updated_band });
     } catch (error) {
@@ -269,7 +270,7 @@ exports.unassign_band_from_pilgrim = async (req, res) => {
         updated_band.current_user_id = null; // Ensure null in response
 
         // Add this band back to the group's available list (if group exists)
-        await Group.findByIdAndUpdate(group_id, { $addToSet: { available_band_ids: updated_band._id } }).catch(() => {});
+        await Group.findByIdAndUpdate(group_id, { $addToSet: { available_band_ids: updated_band._id } }).catch(() => { });
 
         res.json({ message: "Band successfully unassigned from pilgrim", band: updated_band });
 
@@ -310,8 +311,8 @@ exports.send_group_alert = async (req, res) => {
 
         // Logic for Option 3 hardware: This text would be pushed to the hardware SDK
         // For now, we return a success status
-        res.json({ 
-            status: "queued", 
+        res.json({
+            status: "queued",
             message: `Alert "${message_text}" sent to group ${group_id}`,
             recipients: group.pilgrim_ids.length
         });
@@ -338,8 +339,8 @@ exports.send_individual_alert = async (req, res) => {
         }
 
         // Logic for sending alert to specific wristband
-        res.json({ 
-            status: "queued", 
+        res.json({
+            status: "queued",
             message: `Alert "${message_text}" sent to pilgrim ${pilgrim.full_name}`,
             band_serial: band.serial_number
         });
@@ -371,8 +372,8 @@ exports.add_pilgrim_to_group = async (req, res) => {
 
         if (!updated_group) return res.status(404).json({ message: "Group not found" });
 
-        res.json({ 
-            message: "Pilgrim added to group", 
+        res.json({
+            message: "Pilgrim added to group",
             group: {
                 _id: updated_group._id,
                 group_name: updated_group.group_name,
@@ -398,8 +399,8 @@ exports.remove_pilgrim_from_group = async (req, res) => {
 
         if (!updated_group) return res.status(404).json({ message: "Group not found" });
 
-        res.json({ 
-            message: "Pilgrim removed from group", 
+        res.json({
+            message: "Pilgrim removed from group",
             group: {
                 _id: updated_group._id,
                 group_name: updated_group.group_name,
@@ -454,7 +455,7 @@ exports.update_group_details = async (req, res) => {
 
         // Check if new group name already exists for this moderator (only if moderator is updating)
         if (group_name && !is_admin) {
-             const existing_group_with_name = await Group.findOne({
+            const existing_group_with_name = await Group.findOne({
                 group_name,
                 moderator_ids: req.user.id,
                 _id: { $ne: group_id } // Exclude current group
@@ -463,14 +464,14 @@ exports.update_group_details = async (req, res) => {
                 return res.status(400).json({ message: "You already have a group with this name" });
             }
         }
-        
+
         group.group_name = group_name || group.group_name;
         await group.save();
 
         const updated_group = await Group.findById(group_id)
             .populate('moderator_ids', 'full_name email')
             .lean();
-        
+
         // Clean up __v and pilgrim_ids for response to match docs
         delete updated_group.__v;
         // The docs show pilgrim_ids as an array of IDs in the PUT response, so no need to delete or populate details for it

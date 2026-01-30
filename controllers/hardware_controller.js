@@ -1,4 +1,5 @@
 const HardwareBand = require('../models/hardware_band_model');
+const Group = require('../models/group_model');
 
 // Endpoint for the physical wristband to report GPS data
 exports.report_location = async (req, res) => {
@@ -17,7 +18,7 @@ exports.report_location = async (req, res) => {
         );
 
         if (!updated_band) return res.status(404).json({ message: "Band not registered" });
-        
+
         res.json({ status: "success", server_time: new Date() });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -34,6 +35,20 @@ exports.get_all_bands = async (req, res) => {
         const skip = (pageNum - 1) * limitNum;
 
         const query = status ? { status } : {};
+
+        // New Logic: Exclude bands that are already assigned to any group's available_band_ids
+        if (req.query.exclude_assigned_to_groups === 'true') {
+            const groups = await Group.find({}, 'available_band_ids').lean();
+            const assignedBandIds = groups.reduce((acc, group) => {
+                if (group.available_band_ids && Array.isArray(group.available_band_ids)) {
+                    group.available_band_ids.forEach(id => acc.push(id.toString()));
+                }
+                return acc;
+            }, []);
+
+            // Add to query: _id must NOT be in assignedBandIds
+            query._id = { $nin: assignedBandIds };
+        }
 
         const bands = await HardwareBand.find(query)
             .populate('current_user_id', 'full_name email phone_number')
@@ -62,15 +77,15 @@ exports.get_all_bands = async (req, res) => {
 exports.get_band = async (req, res) => {
     try {
         const { serial_number } = req.params;
-        
+
         const band_doc = await HardwareBand.findOne({ serial_number })
             .populate('current_user_id', 'full_name email phone_number');
-        
+
         if (!band_doc) return res.status(404).json({ message: "Band not found" });
 
         const band = band_doc.toObject();
         delete band.__v;
-        
+
         res.json(band);
     } catch (error) {
         res.status(500).json({ error: error.message });

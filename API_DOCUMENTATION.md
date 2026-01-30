@@ -666,6 +666,7 @@ All paginated responses include:
   - `page` (optional): Page number, default = 1
   - `limit` (optional): Items per page, default = 50, max = 100
   - `status` (optional): Filter by status - `active`, `maintenance`, or `inactive`
+  - `exclude_assigned_to_groups` (optional): Set to `true` to exclude bands already assigned to any group.
 - **Response (200):**
   ```json
   {

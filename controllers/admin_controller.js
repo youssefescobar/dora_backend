@@ -89,7 +89,7 @@ exports.get_system_stats = async (req, res) => {
 
         const moderators = await User.countDocuments({ role: 'moderator' });
         const admins = await User.countDocuments({ role: 'admin' });
-        
+
         const active_users_count = await User.countDocuments({ active: true });
         const active_pilgrims_count = await Pilgrim.countDocuments({ active: true });
         const active_users = active_users_count + active_pilgrims_count;
@@ -322,7 +322,7 @@ exports.delete_group_by_id = async (req, res) => {
         if (!deleted_group) {
             return res.status(404).json({ message: "Group not found" });
         }
-        
+
         res.status(200).json({ message: `Group with ID ${group_id} has been permanently deleted.` });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -348,15 +348,37 @@ exports.assign_bands_to_group = async (req, res) => {
             return res.status(404).json({ message: 'Some bands not found', missing });
         }
 
+        // Check if any of these bands are already assigned to ANY other group
+        const conflictingGroup = await Group.findOne({
+            available_band_ids: { $in: band_ids },
+            _id: { $ne: group_id } // Exclude the current group
+        });
+
+        if (conflictingGroup) {
+            return res.status(400).json({
+                message: `One or more bands are already assigned to group: ${conflictingGroup.group_name}`
+            });
+        }
+
         // Add the new band IDs to the group's available bands
-        const updated_group = await Group.findByIdAndUpdate(
+        await Group.findByIdAndUpdate(
             group_id,
-            { $addToSet: { available_band_ids: { $each: band_ids } } },
-            { new: true }
+            { $addToSet: { available_band_ids: { $each: band_ids } } }
         );
 
-        res.json({ message: "Bands assigned to group successfully", group: updated_group });
+        // Fetch the updated group with populated fields (don't use .lean() with populate)
+        const updated_group = await Group.findById(group_id)
+            .populate('moderator_ids', 'full_name email')
+            .populate('available_band_ids', 'serial_number status imei');
+
+        console.log('Updated group:', updated_group);
+
+        res.json({
+            message: "Bands assigned to group successfully",
+            group: updated_group
+        });
     } catch (error) {
+        console.error('Error in assign_bands_to_group:', error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -373,14 +395,24 @@ exports.unassign_bands_from_group = async (req, res) => {
         }
 
         // Remove the band IDs from the group's available bands
-        const updated_group = await Group.findByIdAndUpdate(
+        await Group.findByIdAndUpdate(
             group_id,
-            { $pullAll: { available_band_ids: band_ids } },
-            { new: true }
+            { $pullAll: { available_band_ids: band_ids } }
         );
 
-        res.json({ message: "Bands unassigned from group successfully", group: updated_group });
+        // Fetch the updated group with populated fields (don't use .lean() with populate)
+        const updated_group = await Group.findById(group_id)
+            .populate('moderator_ids', 'full_name email')
+            .populate('available_band_ids', 'serial_number status imei');
+
+        console.log('Updated group after unassign:', updated_group);
+
+        res.json({
+            message: "Bands unassigned from group successfully",
+            group: updated_group
+        });
     } catch (error) {
+        console.error('Error in unassign_bands_from_group:', error);
         res.status(500).json({ error: error.message });
     }
 };
