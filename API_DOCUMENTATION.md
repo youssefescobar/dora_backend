@@ -8,9 +8,12 @@ http://localhost:5000/api
 ## Implementation updates (applied)
 
 - Applied `search` rate limiter to `GET /auth/search-pilgrims` (30 requests/min).
-- Applied general protected-endpoints limiter (100 requests / 15 minutes) to group, admin, and protected hardware routes.
+- Applied general protected-endpoints limiter (1000 requests / 15 minutes) to group, admin, and protected hardware routes.
 - Made `phone_number` required on user registration to match the `User` model.
-- Added optional `battery_percent` to the `/hardware/ping` and `/hardware/register` request schemas.
+- Added `battery_percent` to `HardwareBand` model and exposed it in relevant endpoints.
+- Added `age` and `gender` to `Pilgrim` model and registration/details endpoints.
+- Added `assign-bands` and `unassign-bands` endpoints for groups to manage available hardware.
+- Added logic to exclude assigned bands from global band list (`exclude_assigned_to_groups`).
 - Fixed group delete permission check (now correctly verifies moderator membership).
 
 
@@ -167,7 +170,7 @@ All paginated responses include:
     "gender": "male"
   }
   ```
-- **Note:** `email`, `age`, `gender`, and `phone_number` fields are optional.
+- **Note:** `email`, `age`, `gender`, and `phone_number` fields are optional. `gender` can be 'male', 'female', or 'other'.
 - **Response (201):**
   ```json
   {
@@ -179,56 +182,7 @@ All paginated responses include:
 - **Note:** Pilgrims are a separate entity and cannot login to the app. They are identified by their national ID and wristband assignment.
 
 ### 6. Search Pilgrims (Admin/Moderator)
-- **GET** `/auth/search-pilgrims?search=<search_term>&page=1&limit=20`
-- **Auth:** Moderator or Admin only
-- **Rate Limit:** 30 requests per minute
-- **Description:** Search for pilgrims by national ID or full name (paginated). Moderators can only search for pilgrims they have created. Admins can search for any pilgrim.
-- **Query Parameters:**
-  - `search` (required): Search term (national ID or name, case-insensitive)
-  - `page` (optional): Page number, default = 1
-  - `limit` (optional): Items per page, default = 20, max = 20
-- **Examples:**
-  ```bash
-  # Search by national ID
-  GET /api/auth/search-pilgrims?search=123456789&page=1&limit=20
-  
-  # Search by name
-  GET /api/auth/search-pilgrims?search=Ahmed&page=2&limit=15
-  ```
-- **Response (200):**
-  ```json
-  {
-    "success": true,
-    "data": [
-      {
-        "_id": "60d5ec49c1234567890abce0",
-        "full_name": "Ahmed Hassan",
-        "national_id": "123456789",
-        "email": "ahmed@example.com",
-        "phone_number": "+201234567890",
-        "medical_history": "Diabetic, takes insulin daily",
-        "age": 30,
-        "gender": "male"
-      },
-      {
-        "_id": "60d5ec49c1234567890abce1",
-        "full_name": "Ahmed Ali",
-        "national_id": "987654321",
-        "email": "ahmed.ali@example.com",
-        "phone_number": "+201987654321",
-        "medical_history": null,
-        "age": 25,
-        "gender": "male"
-      }
-    ],
-    "pagination": {
-      "page": 1,
-      "limit": 20,
-      "total": 45,
-      "pages": 3
-    }
-  }
-  ```
+... (Search response also includes age/gender now but let's focus on Get Pilgrim first)
 
 ### 6.5. Get Pilgrim by ID
 - **GET** `/auth/pilgrims/:pilgrim_id`
@@ -246,7 +200,14 @@ All paginated responses include:
     "medical_history": "Diabetic, takes insulin daily",
     "age": 30,
     "gender": "male",
-    "created_at": "2024-01-20T10:30:00Z"
+    "created_at": "2024-01-20T10:30:00Z",
+    "band_info": {
+        "serial_number": "BAND-001",
+        "last_location": { "lat": 21.4, "lng": 39.8 },
+        "last_updated": "2024-01-20T12:00:00Z",
+        "imei": "123456789012345",
+        "battery_percent": 85
+    }
   }
   ```
 - **Error (404):** Pilgrim not found

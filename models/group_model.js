@@ -6,6 +6,6 @@ const group_schema = new mongoose.Schema({
     pilgrim_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Pilgrim' }],
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     available_band_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'HardwareBand' }]
-});
+}, { timestamps: true });
 
 module.exports = mongoose.model('Group', group_schema);

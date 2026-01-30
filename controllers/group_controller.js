@@ -150,6 +150,9 @@ exports.get_my_groups = async (req, res) => {
             delete groupObj.pilgrim_ids;
             groupObj.pilgrims = pilgrims_with_locations;
 
+            // Polyfill created_at if missing
+            groupObj.created_at = groupObj.createdAt || groupObj.created_at || (groupObj._id && groupObj._id.getTimestamp ? groupObj._id.getTimestamp() : new Date(parseInt(groupObj._id.toString().substring(0, 8), 16) * 1000));
+
             return groupObj;
         }));
 

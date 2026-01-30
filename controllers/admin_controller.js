@@ -50,24 +50,36 @@ exports.get_all_users = async (req, res) => {
 // Get all groups with pagination
 exports.get_all_groups = async (req, res) => {
     try {
-        const { page = 1, limit = 30 } = req.query;
+        const { page = 1, limit = 30, search } = req.query;
 
         const pageNum = Math.max(1, parseInt(page) || 1);
         const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 30));
         const skip = (pageNum - 1) * limitNum;
 
-        const groups = await Group.find()
+        const query = {};
+        if (search) {
+            query.group_name = { $regex: search, $options: 'i' };
+        }
+
+        const groups = await Group.find(query)
             .populate('moderator_ids', 'full_name email')
             .populate('created_by', 'full_name email')
             .skip(skip)
             .limit(limitNum)
             .lean();
 
-        const total = await Group.countDocuments();
+        const total = await Group.countDocuments(query);
+
+        const groupsWithCount = groups.map(group => ({
+            ...group,
+            pilgrim_count: group.pilgrim_ids ? group.pilgrim_ids.length : 0,
+            pilgrims: group.pilgrim_ids, // Alias for frontend compatibility
+            created_at: group.createdAt || group.created_at || (group._id && group._id.getTimestamp ? group._id.getTimestamp() : new Date(parseInt(group._id.substring(0, 8), 16) * 1000))
+        }));
 
         res.json({
             success: true,
-            data: groups,
+            data: groupsWithCount,
             pagination: {
                 page: pageNum,
                 limit: limitNum,
