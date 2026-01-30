@@ -39,7 +39,10 @@ exports.get_single_group = async (req, res) => {
                 ...pilgrim,
                 band_info: band ? {
                     serial_number: band.serial_number,
-                    last_location: { lat: band.last_latitude, lng: band.last_longitude },
+                    last_location: band.last_latitude && band.last_longitude ? {
+                        lat: band.last_latitude,
+                        lng: band.last_longitude
+                    } : null,
                     last_updated: band.last_updated,
                     battery_percent: band.battery_percent
                 } : null
@@ -133,7 +136,10 @@ exports.get_my_groups = async (req, res) => {
                     ...pilgrimObj,
                     band_info: band ? {
                         serial_number: band.serial_number,
-                        last_location: { lat: band.last_latitude, lng: band.last_longitude },
+                        last_location: band.last_latitude && band.last_longitude ? {
+                            lat: band.last_latitude,
+                            lng: band.last_longitude
+                        } : null,
                         last_updated: band.last_updated,
                         battery_percent: band.battery_percent // Include battery_percent
                     } : null

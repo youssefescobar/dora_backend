@@ -46,8 +46,9 @@ exports.get_all_bands = async (req, res) => {
                 return acc;
             }, []);
 
-            // Add to query: _id must NOT be in assignedBandIds
+            // Add to query: _id must NOT be in assignedBandIds AND current_user_id must be null
             query._id = { $nin: assignedBandIds };
+            query.current_user_id = null;
         }
 
         const bands = await HardwareBand.find(query)

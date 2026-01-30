@@ -1,5 +1,6 @@
 const User = require('../models/user_model');
 const Pilgrim = require('../models/pilgrim_model');
+const HardwareBand = require('../models/hardware_band_model');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -15,7 +16,7 @@ exports.register_user = async (req, res) => {
         }
 
         const hashed_password = await bcrypt.hash(password, 10);
-        
+
         const user = await User.create({
             full_name,
             email,
@@ -40,8 +41,8 @@ exports.login_user = async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user._id, role: user.role }, 
-            process.env.JWT_SECRET, 
+            { id: user._id, role: user.role },
+            process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
 
@@ -55,9 +56,9 @@ exports.login_user = async (req, res) => {
 exports.get_profile = async (req, res) => {
     try {
         const user = await User.findById(req.user.id).select('_id full_name email role phone_number created_at');
-        
+
         if (!user) return res.status(404).json({ message: "User not found" });
-        
+
         res.json(user);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -71,7 +72,7 @@ exports.update_profile = async (req, res) => {
 
         const user = await User.findByIdAndUpdate(
             req.user.id,
-            { 
+            {
                 ...(full_name && { full_name }),
                 ...(phone_number && { phone_number })
             },
@@ -106,8 +107,8 @@ exports.register_pilgrim = async (req, res) => {
             created_by: req.user.id
         });
 
-        res.status(201).json({ 
-            message: "Pilgrim registered successfully", 
+        res.status(201).json({
+            message: "Pilgrim registered successfully",
             pilgrim_id: pilgrim._id,
             national_id: pilgrim.national_id
         });
@@ -147,7 +148,7 @@ exports.search_pilgrims = async (req, res) => {
 
         const total = await Pilgrim.countDocuments(searchQuery);
 
-        res.json({ 
+        res.json({
             success: true,
             data: pilgrims,
             pagination: {
@@ -179,7 +180,22 @@ exports.get_pilgrim_by_id = async (req, res) => {
             return res.status(404).json({ message: "Pilgrim not found" });
         }
 
-        res.json(pilgrim);
+        const pilgrimObj = pilgrim.toObject ? pilgrim.toObject() : pilgrim;
+
+        const band = await HardwareBand.findOne({ current_user_id: pilgrim_id }).lean();
+
+        pilgrimObj.band_info = band ? {
+            serial_number: band.serial_number,
+            last_location: band.last_latitude && band.last_longitude ? {
+                lat: band.last_latitude,
+                lng: band.last_longitude
+            } : null,
+            last_updated: band.last_updated,
+            imei: band.imei,
+            battery_percent: band.battery_percent
+        } : null;
+
+        res.json(pilgrimObj);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

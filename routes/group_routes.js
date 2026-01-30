@@ -20,9 +20,7 @@ router.post('/send-alert', authorize('moderator', 'admin'), validate(send_alert_
 router.post('/send-individual-alert', authorize('moderator', 'admin'), validate(require('../middleware/schemas').send_individual_alert_schema), group_controller.send_individual_alert);
 router.post('/:group_id/add-pilgrim', authorize('moderator', 'admin'), validate(add_pilgrim_schema), group_controller.add_pilgrim_to_group);
 router.post('/:group_id/remove-pilgrim', authorize('moderator', 'admin'), validate(add_pilgrim_schema), group_controller.remove_pilgrim_from_group);
-router.get('/:group_id', authorize('moderator', 'admin'), group_controller.get_single_group);
-router.put('/:group_id', authorize('moderator', 'admin'), validate(require('../middleware/schemas').update_group_schema), group_controller.update_group_details);
-router.delete('/:group_id', authorize('moderator', 'admin'), group_controller.delete_group);
 router.get('/:group_id/available-bands', authorize('moderator', 'admin'), group_controller.get_available_bands_for_group);
+router.get('/:group_id', authorize('moderator', 'admin'), group_controller.get_single_group);
 
 module.exports = router;

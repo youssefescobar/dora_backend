@@ -341,11 +341,20 @@ exports.assign_bands_to_group = async (req, res) => {
         }
 
         // Validate that provided band IDs exist
-        const bands = await HardwareBand.find({ _id: { $in: band_ids } }).select('_id').lean();
+        const bands = await HardwareBand.find({ _id: { $in: band_ids } }).lean();
         if (bands.length !== band_ids.length) {
             const existingIds = bands.map(b => b._id.toString());
             const missing = band_ids.filter(id => !existingIds.includes(id.toString()));
             return res.status(404).json({ message: 'Some bands not found', missing });
+        }
+
+        // Check if any of these bands are currently assigned to a USER
+        const assignedToUser = bands.filter(b => b.current_user_id != null);
+        if (assignedToUser.length > 0) {
+            const assignedSerials = assignedToUser.map(b => b.serial_number).join(', ');
+            return res.status(400).json({
+                message: `Cannot assign bands. The following bands are currently assigned to users: ${assignedSerials}`
+            });
         }
 
         // Check if any of these bands are already assigned to ANY other group
